@@ -193,6 +193,21 @@ button:disabled {
   background: #fbfdff;
 }
 
+.member-item-clickable {
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.member-item-clickable:hover {
+  transform: translateY(-1px);
+  border-color: #1d4fc6;
+  background: #edf3ff;
+}
+
+.member-item .tiny {
+  margin-top: 4px;
+}
+
 .project-item {
   cursor: pointer;
   transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
@@ -567,6 +582,26 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.workload-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(55vh, 440px);
+  overflow: auto;
+}
+
+.workload-item {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfdff;
+  padding: 10px;
+  display: grid;
+  gap: 5px;
+}
+
+.workload-item-title {
+  font-weight: 600;
 }
 
 .hidden {

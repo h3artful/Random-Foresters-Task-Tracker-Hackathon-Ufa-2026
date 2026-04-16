@@ -56,6 +56,11 @@ const els = {
   duplicateReviewViewBtn: document.getElementById("duplicateReviewViewBtn"),
   duplicateReviewApproveBtn: document.getElementById("duplicateReviewApproveBtn"),
   duplicateReviewRejectBtn: document.getElementById("duplicateReviewRejectBtn"),
+  developerWorkloadModal: document.getElementById("developerWorkloadModal"),
+  developerWorkloadTitle: document.getElementById("developerWorkloadTitle"),
+  developerWorkloadSummary: document.getElementById("developerWorkloadSummary"),
+  developerWorkloadList: document.getElementById("developerWorkloadList"),
+  developerWorkloadCloseBtn: document.getElementById("developerWorkloadCloseBtn"),
 };
 
 const NEXT_STATUS = {
@@ -67,6 +72,7 @@ const NEXT_STATUS = {
 };
 
 const TASK_STATUSES = ["open", "selected", "in_progress", "ready_for_acceptance", "closed"];
+const TAKEN_TASK_STATUSES = new Set(["selected", "in_progress", "ready_for_acceptance"]);
 const BOARD_COLUMNS = [
   { status: "open", title: "BACKLOG" },
   { status: "selected", title: "TO DO" },
@@ -201,6 +207,7 @@ function clearSession() {
   renderAuthState();
   renderWorkspace();
   els.duplicateReviewModal.classList.add("hidden");
+  els.developerWorkloadModal.classList.add("hidden");
 }
 
 function renderAuthState() {
@@ -323,6 +330,7 @@ function renderProjectList() {
     item.className = `project-item ${project.id === state.selectedProjectId ? "active" : ""}`;
     item.innerHTML = `<strong>${project.name}</strong><div class="tiny muted">${project.description || "без описания"}</div>`;
     item.addEventListener("click", async () => {
+      closeDeveloperWorkloadModal();
       state.selectedProjectId = project.id;
       state.historyByTask = {};
       await loadProjectContext();
@@ -330,6 +338,73 @@ function renderProjectList() {
       renderWorkspace();
     });
     els.projectList.appendChild(item);
+  }
+}
+
+function closeDeveloperWorkloadModal() {
+  els.developerWorkloadModal.classList.add("hidden");
+  els.developerWorkloadSummary.textContent = "";
+  els.developerWorkloadList.innerHTML = "";
+}
+
+function renderDeveloperWorkloadList(tasks) {
+  els.developerWorkloadList.innerHTML = "";
+  if (!tasks.length) {
+    els.developerWorkloadList.innerHTML = '<div class="muted">Сейчас нет взятых задач</div>';
+    return;
+  }
+
+  for (const task of tasks) {
+    const item = document.createElement("article");
+    item.className = "workload-item";
+
+    const title = document.createElement("div");
+    title.className = "workload-item-title";
+    title.textContent = `#${task.id} ${task.title}`;
+
+    const meta = document.createElement("div");
+    meta.className = "tiny muted";
+    meta.textContent = `Статус: ${task.status} | Приоритет: ${task.priority} | Тип: ${task.type}`;
+
+    const sprint = document.createElement("div");
+    sprint.className = "tiny muted";
+    sprint.textContent = `Спринт: ${task.sprint ? task.sprint.name : "-"}`;
+
+    item.appendChild(title);
+    item.appendChild(meta);
+    item.appendChild(sprint);
+    els.developerWorkloadList.appendChild(item);
+  }
+}
+
+async function openDeveloperWorkloadModal(user) {
+  if (!state.selectedProjectId) {
+    return;
+  }
+
+  els.developerWorkloadTitle.textContent = `Загруженность: ${user.name}`;
+  els.developerWorkloadSummary.textContent = "Загрузка...";
+  els.developerWorkloadList.innerHTML = "";
+  els.developerWorkloadModal.classList.remove("hidden");
+
+  try {
+    const assignedTasks = await api("/tasks", {
+      query: {
+        project_id: state.selectedProjectId,
+        assignee_id: user.id,
+      },
+    });
+    const takenTasks = assignedTasks.filter((task) => TAKEN_TASK_STATUSES.has(task.status));
+    const selectedCount = takenTasks.filter((task) => task.status === "selected").length;
+    const inProgressCount = takenTasks.filter((task) => task.status === "in_progress").length;
+    const reviewCount = takenTasks.filter((task) => task.status === "ready_for_acceptance").length;
+
+    els.developerWorkloadSummary.textContent =
+      `Взято задач: ${takenTasks.length} (selected: ${selectedCount}, in_progress: ${inProgressCount}, ready_for_acceptance: ${reviewCount})`;
+    renderDeveloperWorkloadList(takenTasks);
+  } catch (error) {
+    els.developerWorkloadSummary.textContent = "Не удалось загрузить загруженность";
+    els.developerWorkloadList.innerHTML = `<div class="muted">${error.message}</div>`;
   }
 }
 
@@ -350,8 +425,22 @@ function renderMemberBlock() {
   } else {
     for (const member of state.members) {
       const node = document.createElement("div");
-      node.className = "member-item";
-      node.textContent = `${member.user.name} (${member.user.role})`;
+      const isDeveloperMember = member.user.role === "developer";
+      node.className = `member-item${isDeveloperMember ? " member-item-clickable" : ""}`;
+      if (isDeveloperMember) {
+        const title = document.createElement("div");
+        title.textContent = `${member.user.name} (${member.user.role})`;
+        const hint = document.createElement("div");
+        hint.className = "tiny muted";
+        hint.textContent = "Нажми, чтобы посмотреть загруженность";
+        node.appendChild(title);
+        node.appendChild(hint);
+        node.addEventListener("click", async () => {
+          await openDeveloperWorkloadModal(member.user);
+        });
+      } else {
+        node.textContent = `${member.user.name} (${member.user.role})`;
+      }
       els.memberList.appendChild(node);
     }
   }
@@ -1120,6 +1209,16 @@ els.duplicateReviewRejectBtn.addEventListener("click", () => {
   showMessage("Создание задачи отменено", "info");
 });
 
+els.developerWorkloadCloseBtn.addEventListener("click", () => {
+  closeDeveloperWorkloadModal();
+});
+
+els.developerWorkloadModal.addEventListener("click", (event) => {
+  if (event.target === els.developerWorkloadModal) {
+    closeDeveloperWorkloadModal();
+  }
+});
+
 els.filterForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
@@ -1164,6 +1263,18 @@ els.taskTabArchive.addEventListener("click", async () => {
     renderWorkspace();
   } catch (error) {
     showMessage(error.message, "error");
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") {
+    return;
+  }
+  if (!els.developerWorkloadModal.classList.contains("hidden")) {
+    closeDeveloperWorkloadModal();
+  }
+  if (!els.duplicateReviewModal.classList.contains("hidden")) {
+    closeDuplicateReviewModal();
   }
 });
 
