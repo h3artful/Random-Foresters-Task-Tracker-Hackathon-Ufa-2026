@@ -1,0 +1,41 @@
+{
+  "model": "RF",
+  "feature_cols": [
+    "priority_ord",
+    "priority_median_dur",
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+    "is_weekend",
+    "is_business_hours",
+    "summary_len",
+    "summary_word_count",
+    "summary_has_error",
+    "summary_has_ui",
+    "summary_has_perf",
+    "type_Bug",
+    "type_Suggestion"
+  ],
+  "priority_map": {
+    "Trivial": 0,
+    "Minor": 1,
+    "Low": 2,
+    "Medium": 3,
+    "Major": 4,
+    "High": 5,
+    "Critical": 6,
+    "Blocker": 7
+  },
+  "priority_median_dur": {
+    "2.0": 3852.3,
+    "3.0": 631.4,
+    "5.0": 435.2
+  },
+  "metrics": {
+    "r2": 0.9494,
+    "mae_log": 0.2692,
+    "mae_hours": 848.4,
+    "mdae_hours": 240.2
+  }
+}

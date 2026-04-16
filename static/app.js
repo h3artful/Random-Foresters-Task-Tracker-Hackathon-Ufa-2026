@@ -15,6 +15,7 @@ const state = {
   dashboard: null,
   historyByTask: {},
   duplicateReview: null,
+  dragTaskId: null,
 };
 
 const els = {
@@ -66,6 +67,13 @@ const NEXT_STATUS = {
 };
 
 const TASK_STATUSES = ["open", "selected", "in_progress", "ready_for_acceptance", "closed"];
+const BOARD_COLUMNS = [
+  { status: "open", title: "BACKLOG" },
+  { status: "selected", title: "TO DO" },
+  { status: "in_progress", title: "IN PROGRESS" },
+  { status: "ready_for_acceptance", title: "REVIEW / QA" },
+  { status: "closed", title: "DONE" },
+];
 
 function isManager() {
   return state.currentUser?.role === "manager";
@@ -187,6 +195,7 @@ function clearSession() {
   state.taskTitleSearch = "";
   state.historyByTask = {};
   state.duplicateReview = null;
+  state.dragTaskId = null;
   els.taskTitleSearch.value = "";
   localStorage.removeItem(TOKEN_KEY);
   renderAuthState();
@@ -498,6 +507,341 @@ async function loadTaskHistory(taskId) {
   return history;
 }
 
+function getTaskById(taskId) {
+  return state.tasks.find((task) => task.id === taskId) || null;
+}
+
+function canMoveTaskToStatus(task, targetStatus) {
+  if (!task || task.status === targetStatus) {
+    return false;
+  }
+  return getAllowedStatusOptions(task).includes(targetStatus);
+}
+
+function clearBoardDropMarkers() {
+  document.querySelectorAll(".board-dropzone").forEach((dropzone) => {
+    dropzone.classList.remove("is-drop-allowed", "is-drop-blocked");
+  });
+  document.querySelectorAll(".board-task-card").forEach((card) => {
+    card.classList.remove("is-dragging");
+  });
+}
+
+async function moveTaskToStatus(task, targetStatus) {
+  await api(`/tasks/${task.id}/status`, {
+    method: "PATCH",
+    body: { status: targetStatus },
+  });
+  showMessage("Статус обновлен", "success");
+  state.historyByTask[task.id] = null;
+  await loadProjectContext();
+  await loadTasks();
+  renderWorkspace();
+}
+
+function createHistoryControls(task) {
+  const historyToggle = document.createElement("button");
+  historyToggle.type = "button";
+  historyToggle.className = "secondary";
+  historyToggle.textContent = "История";
+
+  const historyBox = document.createElement("div");
+  historyBox.className = "history-box hidden";
+
+  historyToggle.addEventListener("click", async () => {
+    if (!historyBox.classList.contains("hidden")) {
+      historyBox.classList.add("hidden");
+      return;
+    }
+
+    historyBox.innerHTML = '<div class="muted">Загрузка...</div>';
+    historyBox.classList.remove("hidden");
+    try {
+      const history = await loadTaskHistory(task.id);
+      if (!history.length) {
+        historyBox.innerHTML = '<div class="muted">История пока пустая</div>';
+        return;
+      }
+
+      historyBox.innerHTML = "";
+      for (const item of history) {
+        const line = document.createElement("div");
+        line.className = "history-item";
+        const actorName = item.actor ? item.actor.name : "system";
+        const time = new Date(item.created_at).toLocaleString();
+        line.textContent = `${time} | ${actorName} | ${item.action} | ${item.details}`;
+        historyBox.appendChild(line);
+      }
+    } catch (error) {
+      historyBox.innerHTML = `<div class="muted">${error.message}</div>`;
+    }
+  });
+
+  return { historyToggle, historyBox };
+}
+
+function renderArchiveTaskList(tasks) {
+  for (const task of tasks) {
+    const card = document.createElement("article");
+    card.className = "task-card";
+    card.innerHTML = `
+      <div class="task-head">
+        <h3>${task.title}</h3>
+        <div class="badges">
+          <span class="badge status-${task.status}">${task.status}</span>
+          <span class="badge">${task.type}</span>
+          <span class="badge">${task.priority}</span>
+        </div>
+      </div>
+      <div class="task-meta">
+        <div>Creator: ${task.creator.name}</div>
+        <div>Assignee: ${task.assignee ? task.assignee.name : "-"}</div>
+        <div>Sprint: ${task.sprint ? task.sprint.name : "-"}</div>
+        <div>Архивировано: ${new Date(task.archived_at).toLocaleString()}${task.archived_by ? ` (${task.archived_by.name})` : ""}</div>
+        <div>${task.description || "Без описания"}</div>
+      </div>
+    `;
+
+    const actions = document.createElement("div");
+    actions.className = "task-actions";
+
+    if (isManagerLike()) {
+      const restoreButton = document.createElement("button");
+      restoreButton.type = "button";
+      restoreButton.className = "secondary";
+      restoreButton.textContent = "Вернуть из архива";
+      restoreButton.addEventListener("click", async () => {
+        restoreButton.disabled = true;
+        try {
+          await api(`/tasks/${task.id}/restore`, { method: "POST" });
+          showMessage("Задача восстановлена из архива", "success");
+          state.historyByTask[task.id] = null;
+          await loadProjectContext();
+          await loadTasks();
+          renderWorkspace();
+        } catch (error) {
+          restoreButton.disabled = false;
+          showMessage(error.message, "error");
+        }
+      });
+      actions.appendChild(restoreButton);
+    }
+
+    const historyControls = createHistoryControls(task);
+    actions.appendChild(historyControls.historyToggle);
+    card.appendChild(actions);
+    card.appendChild(historyControls.historyBox);
+    els.taskList.appendChild(card);
+  }
+}
+
+function createBoardTaskCard(task, developers) {
+  const card = document.createElement("article");
+  card.className = "board-task-card";
+  card.dataset.taskId = String(task.id);
+
+  const top = document.createElement("div");
+  top.className = "board-task-top";
+
+  const title = document.createElement("h3");
+  title.className = "board-task-title";
+  title.textContent = task.title;
+
+  const dragHandle = document.createElement("button");
+  dragHandle.type = "button";
+  dragHandle.className = "board-drag-handle secondary";
+  const canDrag = getAllowedStatusOptions(task).some((statusValue) => statusValue !== task.status);
+  dragHandle.textContent = canDrag ? "DRAG" : "LOCK";
+  dragHandle.draggable = canDrag;
+  dragHandle.title = canDrag ? "Перетащи карточку в другую колонку" : "Для этой задачи переходы недоступны";
+
+  if (canDrag) {
+    dragHandle.addEventListener("dragstart", (event) => {
+      state.dragTaskId = task.id;
+      card.classList.add("is-dragging");
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", String(task.id));
+      }
+    });
+    dragHandle.addEventListener("dragend", () => {
+      state.dragTaskId = null;
+      clearBoardDropMarkers();
+    });
+  }
+
+  top.appendChild(title);
+  top.appendChild(dragHandle);
+
+  const meta = document.createElement("div");
+  meta.className = "board-task-meta";
+  meta.innerHTML = `
+    <div>#${task.id} • ${task.type}</div>
+    <div>Assignee: ${task.assignee ? task.assignee.name : "-"}</div>
+    <div>Sprint: ${task.sprint ? task.sprint.name : "-"}</div>
+  `;
+
+  const badges = document.createElement("div");
+  badges.className = "badges";
+  badges.innerHTML = `
+    <span class="badge status-${task.status}">${task.status}</span>
+    <span class="badge">${task.priority}</span>
+  `;
+
+  const actions = document.createElement("div");
+  actions.className = "board-task-actions";
+
+  if (isManagerLike()) {
+    const assignBlock = document.createElement("label");
+    assignBlock.className = "board-inline-field";
+    assignBlock.textContent = "Назначить";
+
+    const assignSelect = document.createElement("select");
+    assignSelect.appendChild(optionList(developers, (user) => user.id, (user) => user.name));
+    if (task.assignee_id) {
+      assignSelect.value = String(task.assignee_id);
+    }
+    assignSelect.disabled = task.status === "closed" || developers.length === 0;
+    assignSelect.addEventListener("change", async () => {
+      try {
+        await api(`/tasks/${task.id}/assign`, {
+          method: "PATCH",
+          body: { assignee_id: Number(assignSelect.value) },
+        });
+        showMessage("Исполнитель обновлен", "success");
+        state.historyByTask[task.id] = null;
+        await loadTasks();
+        renderTaskList();
+      } catch (error) {
+        showMessage(error.message, "error");
+      }
+    });
+    assignBlock.appendChild(assignSelect);
+    actions.appendChild(assignBlock);
+  }
+
+  if (isManagerLike() && task.status === "closed") {
+    const archiveButton = document.createElement("button");
+    archiveButton.type = "button";
+    archiveButton.className = "secondary";
+    archiveButton.textContent = "В архив";
+    archiveButton.addEventListener("click", async () => {
+      archiveButton.disabled = true;
+      try {
+        await api(`/tasks/${task.id}/archive`, { method: "POST" });
+        showMessage("Задача отправлена в архив", "success");
+        state.historyByTask[task.id] = null;
+        await loadProjectContext();
+        await loadTasks();
+        renderWorkspace();
+      } catch (error) {
+        archiveButton.disabled = false;
+        showMessage(error.message, "error");
+      }
+    });
+    actions.appendChild(archiveButton);
+  }
+
+  const historyControls = createHistoryControls(task);
+  actions.appendChild(historyControls.historyToggle);
+
+  card.appendChild(top);
+  card.appendChild(meta);
+  card.appendChild(badges);
+  card.appendChild(actions);
+  card.appendChild(historyControls.historyBox);
+  return card;
+}
+
+function renderScrumBoard(tasks) {
+  const board = document.createElement("div");
+  board.className = "scrum-board";
+
+  const developers = getProjectDevelopers();
+  const tasksByStatus = {};
+  for (const statusValue of TASK_STATUSES) {
+    tasksByStatus[statusValue] = [];
+  }
+  for (const task of tasks) {
+    if (!tasksByStatus[task.status]) {
+      tasksByStatus[task.status] = [];
+    }
+    tasksByStatus[task.status].push(task);
+  }
+
+  for (const column of BOARD_COLUMNS) {
+    const section = document.createElement("section");
+    section.className = `board-column status-${column.status}`;
+
+    const header = document.createElement("div");
+    header.className = "board-column-header";
+    header.innerHTML = `<span>${column.title}</span><span class="board-column-count">${tasksByStatus[column.status].length}</span>`;
+
+    const dropzone = document.createElement("div");
+    dropzone.className = "board-dropzone";
+    dropzone.dataset.status = column.status;
+
+    dropzone.addEventListener("dragover", (event) => {
+      const taskId = state.dragTaskId || Number(event.dataTransfer?.getData("text/plain") || "0");
+      const draggedTask = getTaskById(taskId);
+      if (!draggedTask) {
+        return;
+      }
+      const allowed = canMoveTaskToStatus(draggedTask, column.status);
+      dropzone.classList.toggle("is-drop-allowed", allowed);
+      dropzone.classList.toggle("is-drop-blocked", !allowed);
+      if (allowed) {
+        event.preventDefault();
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = "move";
+        }
+      }
+    });
+
+    dropzone.addEventListener("dragleave", () => {
+      dropzone.classList.remove("is-drop-allowed", "is-drop-blocked");
+    });
+
+    dropzone.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      const taskId = state.dragTaskId || Number(event.dataTransfer?.getData("text/plain") || "0");
+      const draggedTask = getTaskById(taskId);
+      state.dragTaskId = null;
+      clearBoardDropMarkers();
+      if (!draggedTask) {
+        return;
+      }
+      if (!canMoveTaskToStatus(draggedTask, column.status)) {
+        showMessage("Для этой роли переход в выбранный статус недоступен", "error");
+        return;
+      }
+      try {
+        await moveTaskToStatus(draggedTask, column.status);
+      } catch (error) {
+        showMessage(error.message, "error");
+      }
+    });
+
+    const columnTasks = tasksByStatus[column.status];
+    if (!columnTasks.length) {
+      const empty = document.createElement("div");
+      empty.className = "board-empty";
+      empty.textContent = "Нет задач";
+      dropzone.appendChild(empty);
+    } else {
+      for (const task of columnTasks) {
+        dropzone.appendChild(createBoardTaskCard(task, developers));
+      }
+    }
+
+    section.appendChild(header);
+    section.appendChild(dropzone);
+    board.appendChild(section);
+  }
+
+  els.taskList.appendChild(board);
+}
+
 function renderTaskList() {
   els.taskList.innerHTML = "";
 
@@ -520,191 +864,11 @@ function renderTaskList() {
     return;
   }
 
-  const developers = getProjectDevelopers();
-
-  for (const task of filteredTasks) {
-    const card = document.createElement("article");
-    card.className = "task-card";
-
-    const head = document.createElement("div");
-    head.className = "task-head";
-    head.innerHTML = `<h3>${task.title}</h3>`;
-
-    const badges = document.createElement("div");
-    badges.className = "badges";
-    badges.innerHTML = `
-      <span class="badge status-${task.status}">${task.status}</span>
-      <span class="badge">${task.type}</span>
-      <span class="badge">${task.priority}</span>
-    `;
-    head.appendChild(badges);
-
-    const meta = document.createElement("div");
-    meta.className = "task-meta";
-    const archivedInfo = task.archived_at
-      ? `<div>Архивировано: ${new Date(task.archived_at).toLocaleString()}${task.archived_by ? ` (${task.archived_by.name})` : ""}</div>`
-      : "";
-    meta.innerHTML = `
-      <div>Creator: ${task.creator.name}</div>
-      <div>Assignee: ${task.assignee ? task.assignee.name : "-"}</div>
-      <div>Sprint: ${task.sprint ? task.sprint.name : "-"}</div>
-      ${archivedInfo}
-      <div>${task.description || "Без описания"}</div>
-    `;
-
-    const actions = document.createElement("div");
-    actions.className = "task-actions";
-
-    const statusBlock = document.createElement("label");
-    statusBlock.textContent = "Статус";
-    const statusSelect = document.createElement("select");
-    const availableStatuses = getAllowedStatusOptions(task);
-    for (const statusValue of availableStatuses) {
-      const option = document.createElement("option");
-      option.value = statusValue;
-      option.textContent = statusValue;
-      if (task.status === statusValue) {
-        option.selected = true;
-      }
-      statusSelect.appendChild(option);
-    }
-    statusSelect.disabled = availableStatuses.length <= 1;
-    statusSelect.addEventListener("change", async () => {
-      try {
-        await api(`/tasks/${task.id}/status`, {
-          method: "PATCH",
-          body: { status: statusSelect.value },
-        });
-        showMessage("Статус обновлен", "success");
-        state.historyByTask[task.id] = null;
-        await loadProjectContext();
-        await loadTasks();
-        renderWorkspace();
-      } catch (error) {
-        statusSelect.value = task.status;
-        showMessage(error.message, "error");
-      }
-    });
-    statusBlock.appendChild(statusSelect);
-    actions.appendChild(statusBlock);
-
-    if (isManagerLike()) {
-      const assignBlock = document.createElement("label");
-      assignBlock.textContent = "Назначить";
-      const assignSelect = document.createElement("select");
-      assignSelect.appendChild(optionList(developers, (u) => u.id, (u) => u.name));
-      if (task.assignee_id) {
-        assignSelect.value = String(task.assignee_id);
-      }
-      assignSelect.disabled = task.status === "closed" || developers.length === 0 || isArchiveTab();
-      assignSelect.addEventListener("change", async () => {
-        try {
-          await api(`/tasks/${task.id}/assign`, {
-            method: "PATCH",
-            body: { assignee_id: Number(assignSelect.value) },
-          });
-          showMessage("Исполнитель обновлен", "success");
-          state.historyByTask[task.id] = null;
-          await loadTasks();
-          renderTaskList();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      });
-      assignBlock.appendChild(assignSelect);
-      actions.appendChild(assignBlock);
-    }
-
-    if (isManagerLike() && !isArchiveTab() && task.status === "closed") {
-      const archiveButton = document.createElement("button");
-      archiveButton.type = "button";
-      archiveButton.className = "secondary";
-      archiveButton.textContent = "В архив";
-      archiveButton.addEventListener("click", async () => {
-        archiveButton.disabled = true;
-        try {
-          await api(`/tasks/${task.id}/archive`, { method: "POST" });
-          showMessage("Задача отправлена в архив", "success");
-          state.historyByTask[task.id] = null;
-          await loadProjectContext();
-          await loadTasks();
-          renderWorkspace();
-        } catch (error) {
-          archiveButton.disabled = false;
-          showMessage(error.message, "error");
-        }
-      });
-      actions.appendChild(archiveButton);
-    }
-
-    if (isManagerLike() && isArchiveTab()) {
-      const restoreButton = document.createElement("button");
-      restoreButton.type = "button";
-      restoreButton.className = "secondary";
-      restoreButton.textContent = "Вернуть из архива";
-      restoreButton.addEventListener("click", async () => {
-        restoreButton.disabled = true;
-        try {
-          await api(`/tasks/${task.id}/restore`, { method: "POST" });
-          showMessage("Задача восстановлена из архива", "success");
-          state.historyByTask[task.id] = null;
-          await loadProjectContext();
-          await loadTasks();
-          renderWorkspace();
-        } catch (error) {
-          restoreButton.disabled = false;
-          showMessage(error.message, "error");
-        }
-      });
-      actions.appendChild(restoreButton);
-    }
-
-    const historyToggle = document.createElement("button");
-    historyToggle.type = "button";
-    historyToggle.className = "secondary";
-    historyToggle.textContent = "История";
-
-    const historyBox = document.createElement("div");
-    historyBox.className = "history-box hidden";
-
-    historyToggle.addEventListener("click", async () => {
-      if (!historyBox.classList.contains("hidden")) {
-        historyBox.classList.add("hidden");
-        return;
-      }
-
-      historyBox.innerHTML = '<div class="muted">Загрузка...</div>';
-      historyBox.classList.remove("hidden");
-      try {
-        const history = await loadTaskHistory(task.id);
-        if (!history.length) {
-          historyBox.innerHTML = '<div class="muted">История пока пустая</div>';
-          return;
-        }
-
-        historyBox.innerHTML = "";
-        for (const item of history) {
-          const line = document.createElement("div");
-          line.className = "history-item";
-          const actorName = item.actor ? item.actor.name : "system";
-          const time = new Date(item.created_at).toLocaleString();
-          line.textContent = `${time} | ${actorName} | ${item.action} | ${item.details}`;
-          historyBox.appendChild(line);
-        }
-      } catch (error) {
-        historyBox.innerHTML = `<div class="muted">${error.message}</div>`;
-      }
-    });
-
-    actions.appendChild(historyToggle);
-
-    card.appendChild(head);
-    card.appendChild(meta);
-    card.appendChild(actions);
-    card.appendChild(historyBox);
-
-    els.taskList.appendChild(card);
+  if (isArchiveTab()) {
+    renderArchiveTaskList(filteredTasks);
+    return;
   }
+  renderScrumBoard(filteredTasks);
 }
 
 function renderWorkspace() {
@@ -747,7 +911,7 @@ function buildTaskCreatePayload(formData) {
     title: String(formData.get("title") || ""),
     description: String(formData.get("description") || ""),
     type: String(formData.get("type") || "feature"),
-    priority: String(formData.get("priority") || "Medium"),
+    priority: String(formData.get("priority") || "medium"),
     assignee_id: assigneeRaw ? Number(assigneeRaw) : null,
     sprint_id: sprintRaw ? Number(sprintRaw) : null,
   };
