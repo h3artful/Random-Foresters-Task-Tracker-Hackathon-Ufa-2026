@@ -14,6 +14,7 @@ def utcnow_naive() -> datetime:
 
 
 class UserRole(str, Enum):
+    admin = "admin"
     manager = "manager"
     developer = "developer"
 

@@ -8,6 +8,7 @@ from .security import hash_password
 
 DEMO_MANAGER_EMAIL = "manager@demo.local"
 DEMO_DEVELOPER_EMAIL = "developer@demo.local"
+DEMO_ADMIN_EMAIL = "admin@demo.local"
 DEMO_PASSWORD = "demo12345"
 
 
@@ -145,10 +146,17 @@ def seed_demo_data() -> None:
             email=DEMO_DEVELOPER_EMAIL,
             role=UserRole.developer,
         )
+        admin = _ensure_user(
+            db,
+            name="Demo Admin",
+            email=DEMO_ADMIN_EMAIL,
+            role=UserRole.admin,
+        )
 
         project = _ensure_project(db, manager=manager)
         _ensure_member(db, project_id=project.id, user_id=manager.id)
         _ensure_member(db, project_id=project.id, user_id=developer.id)
+        _ensure_member(db, project_id=project.id, user_id=admin.id)
 
         sprint = _ensure_sprint(db, project_id=project.id)
 
@@ -220,6 +228,7 @@ def seed_demo_data() -> None:
     print("Demo data is ready.")
     print(f"Manager login: {DEMO_MANAGER_EMAIL} / {DEMO_PASSWORD}")
     print(f"Developer login: {DEMO_DEVELOPER_EMAIL} / {DEMO_PASSWORD}")
+    print(f"Admin login: {DEMO_ADMIN_EMAIL} / {DEMO_PASSWORD}")
 
 
 if __name__ == "__main__":

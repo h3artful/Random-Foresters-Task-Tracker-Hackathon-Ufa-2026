@@ -361,6 +361,81 @@ def test_task_archive_flow_and_visibility(client: TestClient) -> None:
     assert archived_list.json()[0]["id"] == task_id
 
 
+def test_admin_can_override_statuses_and_restore_from_archive(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+    admin_email = f"admin-{suffix}@example.com"
+    developer_email = f"admin-dev-{suffix}@example.com"
+
+    admin_register = client.post(
+        "/api/auth/register",
+        json={
+            "name": "Super Admin",
+            "email": admin_email,
+            "password": "pass-12345",
+            "role": "admin",
+        },
+    )
+    assert admin_register.status_code == 201
+    assert admin_register.json()["role"] == "admin"
+
+    developer = register_user(client, "Admin Project Dev", developer_email)
+    admin_headers = login_headers(client, admin_email)
+
+    project = client.post(
+        "/api/projects",
+        json={"name": "Admin Control Project", "description": "admin flow checks"},
+        headers=admin_headers,
+    )
+    assert project.status_code == 201
+    project_id = project.json()["id"]
+
+    add_member = client.post(
+        f"/api/projects/{project_id}/members",
+        json={"user_id": developer["id"]},
+        headers=admin_headers,
+    )
+    assert add_member.status_code == 201
+
+    create_task = client.post(
+        f"/api/projects/{project_id}/tasks",
+        json={
+            "title": "Admin status override task",
+            "description": "Task for checking unrestricted admin status changes",
+            "type": "feature",
+            "priority": "high",
+            "assignee_id": developer["id"],
+        },
+        headers=admin_headers,
+    )
+    assert create_task.status_code == 201
+    task_id = create_task.json()["id"]
+
+    direct_close = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"status": "closed"},
+        headers=admin_headers,
+    )
+    assert direct_close.status_code == 200
+    assert direct_close.json()["status"] == "closed"
+
+    archived = client.post(f"/api/tasks/{task_id}/archive", headers=admin_headers)
+    assert archived.status_code == 200
+    assert archived.json()["archived_at"] is not None
+
+    restored = client.post(f"/api/tasks/{task_id}/restore", headers=admin_headers)
+    assert restored.status_code == 200
+    assert restored.json()["archived_at"] is None
+    assert restored.json()["archived_by_id"] is None
+
+    reopen_to_in_progress = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"status": "in_progress"},
+        headers=admin_headers,
+    )
+    assert reopen_to_in_progress.status_code == 200
+    assert reopen_to_in_progress.json()["status"] == "in_progress"
+
+
 def test_task_duplicate_detection_blocks_confident_duplicate(client: TestClient) -> None:
     suffix = uuid4().hex[:8]
     manager_email = f"dup-mgr-{suffix}@example.com"

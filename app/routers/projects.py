@@ -38,7 +38,7 @@ def list_projects(
     current_user: User = Depends(get_current_user),
 ) -> list[Project]:
     query = db.query(Project)
-    if current_user.role == UserRole.manager:
+    if current_user.role in {UserRole.manager, UserRole.admin}:
         return query.order_by(Project.created_at.desc()).all()
 
     return (
@@ -70,8 +70,8 @@ def add_project_member(
 ) -> ProjectMember:
     _ = get_project_or_404(db, project_id)
     user = get_user_or_404(db, payload.user_id)
-    if user.role != UserRole.developer:
-        raise HTTPException(status_code=400, detail="Only developer can be assigned to a project")
+    if user.role not in {UserRole.developer, UserRole.admin}:
+        raise HTTPException(status_code=400, detail="Only developer or admin can be assigned to a project")
 
     member = ProjectMember(project_id=project_id, user_id=payload.user_id)
     db.add(member)

@@ -65,8 +65,18 @@ const NEXT_STATUS = {
   closed: null,
 };
 
+const TASK_STATUSES = ["open", "selected", "in_progress", "ready_for_acceptance", "closed"];
+
 function isManager() {
   return state.currentUser?.role === "manager";
+}
+
+function isAdmin() {
+  return state.currentUser?.role === "admin";
+}
+
+function isManagerLike() {
+  return isManager() || isAdmin();
 }
 
 function currentProject() {
@@ -75,13 +85,15 @@ function currentProject() {
 }
 
 function getDevelopers() {
-  return state.users.filter((item) => item.role === "developer");
+  return state.users.filter((item) => item.role === "developer" || item.role === "admin");
 }
 
 function getProjectDevelopers() {
   const selectedProject = currentProject();
   if (!selectedProject) return [];
-  return state.members.map((item) => item.user).filter((item) => item.role === "developer");
+  return state.members
+    .map((item) => item.user)
+    .filter((item) => item.role === "developer" || item.role === "admin");
 }
 
 function showMessage(text, type = "info") {
@@ -197,7 +209,7 @@ function renderAuthState() {
   }
 
   document.querySelectorAll(".manager-only").forEach((item) => {
-    item.classList.toggle("hidden", !loggedIn || !isManager());
+    item.classList.toggle("hidden", !loggedIn || !isManagerLike());
   });
 }
 
@@ -336,7 +348,9 @@ function renderMemberBlock() {
   }
 
   const memberIds = new Set(state.members.map((item) => item.user.id));
-  const candidates = state.users.filter((item) => item.role === "developer" && !memberIds.has(item.id));
+  const candidates = state.users.filter(
+    (item) => (item.role === "developer" || item.role === "admin") && !memberIds.has(item.id),
+  );
   els.memberUserSelect.innerHTML = "";
   els.memberUserSelect.appendChild(optionList(candidates, (u) => u.id, (u) => `${u.name} (${u.role})`, true, "-- выбрать --"));
 }
@@ -442,6 +456,10 @@ function renderTaskTabs() {
 }
 
 function getAllowedStatusOptions(task) {
+  if (isAdmin()) {
+    return TASK_STATUSES;
+  }
+
   const current = task.status;
   const next = NEXT_STATUS[current];
   if (!next) return [current];
@@ -570,7 +588,7 @@ function renderTaskList() {
     statusBlock.appendChild(statusSelect);
     actions.appendChild(statusBlock);
 
-    if (isManager()) {
+    if (isManagerLike()) {
       const assignBlock = document.createElement("label");
       assignBlock.textContent = "Назначить";
       const assignSelect = document.createElement("select");
@@ -597,7 +615,7 @@ function renderTaskList() {
       actions.appendChild(assignBlock);
     }
 
-    if (isManager() && !isArchiveTab() && task.status === "closed") {
+    if (isManagerLike() && !isArchiveTab() && task.status === "closed") {
       const archiveButton = document.createElement("button");
       archiveButton.type = "button";
       archiveButton.className = "secondary";
@@ -617,6 +635,28 @@ function renderTaskList() {
         }
       });
       actions.appendChild(archiveButton);
+    }
+
+    if (isManagerLike() && isArchiveTab()) {
+      const restoreButton = document.createElement("button");
+      restoreButton.type = "button";
+      restoreButton.className = "secondary";
+      restoreButton.textContent = "Вернуть из архива";
+      restoreButton.addEventListener("click", async () => {
+        restoreButton.disabled = true;
+        try {
+          await api(`/tasks/${task.id}/restore`, { method: "POST" });
+          showMessage("Задача восстановлена из архива", "success");
+          state.historyByTask[task.id] = null;
+          await loadProjectContext();
+          await loadTasks();
+          renderWorkspace();
+        } catch (error) {
+          restoreButton.disabled = false;
+          showMessage(error.message, "error");
+        }
+      });
+      actions.appendChild(restoreButton);
     }
 
     const historyToggle = document.createElement("button");
@@ -784,7 +824,7 @@ els.refreshBtn.addEventListener("click", async () => {
 
 els.projectCreateForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!isManager()) return;
+  if (!isManagerLike()) return;
 
   const formData = new FormData(els.projectCreateForm);
   try {
@@ -805,7 +845,7 @@ els.projectCreateForm.addEventListener("submit", async (event) => {
 
 els.memberForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!isManager() || !state.selectedProjectId) return;
+  if (!isManagerLike() || !state.selectedProjectId) return;
 
   const formData = new FormData(els.memberForm);
   const userId = Number(formData.get("user_id"));
@@ -828,7 +868,7 @@ els.memberForm.addEventListener("submit", async (event) => {
 
 els.sprintForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!isManager() || !state.selectedProjectId) return;
+  if (!isManagerLike() || !state.selectedProjectId) return;
 
   const formData = new FormData(els.sprintForm);
   try {
@@ -854,7 +894,7 @@ els.sprintForm.addEventListener("submit", async (event) => {
 
 els.taskCreateForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!isManager() || !state.selectedProjectId) return;
+  if (!isManagerLike() || !state.selectedProjectId) return;
 
   const formData = new FormData(els.taskCreateForm);
   const payload = buildTaskCreatePayload(formData);

@@ -85,7 +85,7 @@ def _task_query(db: Session):
 
 
 def _ensure_task_access(db: Session, task: Task, user: User) -> None:
-    if user.role == UserRole.manager:
+    if user.role in {UserRole.manager, UserRole.admin}:
         return
     if not is_project_member(db, task.project_id, user.id):
         raise HTTPException(status_code=403, detail="Task access denied")
@@ -266,8 +266,8 @@ def create_task(
 
     if payload.assignee_id is not None:
         assignee = get_user_or_404(db, payload.assignee_id)
-        if assignee.role != UserRole.developer:
-            raise HTTPException(status_code=400, detail="Task assignee must be a developer")
+        if assignee.role not in {UserRole.developer, UserRole.admin}:
+            raise HTTPException(status_code=400, detail="Task assignee must be a developer or admin")
         if not is_project_member(db, project_id, assignee.id):
             raise HTTPException(status_code=400, detail="Task assignee must be a member of this project")
 
@@ -359,8 +359,8 @@ def assign_task(
     task = get_task_or_404(db, task_id)
     assignee = get_user_or_404(db, payload.assignee_id)
 
-    if assignee.role != UserRole.developer:
-        raise HTTPException(status_code=400, detail="Task assignee must be a developer")
+    if assignee.role not in {UserRole.developer, UserRole.admin}:
+        raise HTTPException(status_code=400, detail="Task assignee must be a developer or admin")
     if not is_project_member(db, task.project_id, assignee.id):
         raise HTTPException(status_code=400, detail="Task assignee must be a member of this project")
     if task.status == TaskStatus.closed:
@@ -384,6 +384,13 @@ def update_task_status(
     _ensure_task_access(db, task, current_user)
 
     if task.status == payload.status:
+        return _task_query(db).filter(Task.id == task.id).first()
+
+    if current_user.role == UserRole.admin:
+        previous = task.status
+        task.status = payload.status
+        _audit(db, task.id, current_user.id, "status_changed", f"{previous.value} -> {payload.status.value}")
+        db.commit()
         return _task_query(db).filter(Task.id == task.id).first()
 
     _validate_transition(task.status, payload.status)
@@ -438,6 +445,25 @@ def archive_task(
     task.archived_at = utcnow_naive()
     task.archived_by_id = current_user.id
     _audit(db, task.id, current_user.id, "task_archived", "Task moved to archive")
+
+    db.commit()
+    return _task_query(db).filter(Task.id == task.id).first()
+
+
+@router.post("/tasks/{task_id}/restore", response_model=TaskRead)
+def restore_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.manager)),
+) -> TaskRead:
+    task = get_task_or_404(db, task_id)
+
+    if task.archived_at is None:
+        return _task_query(db).filter(Task.id == task.id).first()
+
+    task.archived_at = None
+    task.archived_by_id = None
+    _audit(db, task.id, current_user.id, "task_restored", "Task restored from archive")
 
     db.commit()
     return _task_query(db).filter(Task.id == task.id).first()

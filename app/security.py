@@ -99,6 +99,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 def require_roles(*roles: UserRole):
     allowed = set(roles)
+    if UserRole.manager in allowed or UserRole.developer in allowed:
+        allowed.add(UserRole.admin)
 
     def _require(user: User = Depends(get_current_user)) -> User:
         if user.role not in allowed:
