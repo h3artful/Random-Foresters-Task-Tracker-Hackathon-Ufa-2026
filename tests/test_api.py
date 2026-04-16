@@ -64,6 +64,13 @@ def test_auth_and_roles(client: TestClient) -> None:
     assert manager["role"] == "manager"
     assert developer["role"] == "developer"
 
+    # Swagger OAuth2 password flow sends form fields: username/password.
+    oauth_form_login = client.post(
+        "/api/auth/login",
+        data={"username": manager["email"], "password": "pass-12345"},
+    )
+    assert oauth_form_login.status_code == 200
+
 
 def test_project_sprint_task_flow(client: TestClient) -> None:
     suffix = uuid4().hex[:8]

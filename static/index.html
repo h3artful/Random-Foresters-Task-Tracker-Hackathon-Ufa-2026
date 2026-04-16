@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Task Tracker MVP</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Task Tracker MVP</h1>
+        <p>Проекты, спринты, задачи и контроль статусов</p>
+      </div>
+      <div class="topbar-actions">
+        <span id="sessionInfo" class="muted">Не авторизован</span>
+        <button id="refreshBtn" class="secondary hidden" type="button">Обновить</button>
+        <button id="logoutBtn" class="secondary hidden" type="button">Выйти</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <section id="authSection" class="auth-grid">
+        <form id="loginForm" class="card">
+          <h2>Вход</h2>
+          <label>
+            Email
+            <input name="email" type="email" required />
+          </label>
+          <label>
+            Пароль
+            <input name="password" type="password" minlength="8" required />
+          </label>
+          <button type="submit">Войти</button>
+        </form>
+
+        <form id="registerForm" class="card">
+          <h2>Регистрация</h2>
+          <label>
+            Имя
+            <input name="name" minlength="2" required />
+          </label>
+          <label>
+            Email
+            <input name="email" type="email" required />
+          </label>
+          <label>
+            Пароль
+            <input name="password" type="password" minlength="8" required />
+          </label>
+          <button type="submit">Создать аккаунт</button>
+          <p class="muted tiny">Первый пользователь получает роль manager, остальные developer.</p>
+        </form>
+      </section>
+
+      <section id="appSection" class="workspace hidden">
+        <aside class="column-left">
+          <section class="card">
+            <h2>Проекты</h2>
+            <form id="projectCreateForm" class="stack manager-only">
+              <label>
+                Название
+                <input name="name" minlength="2" required />
+              </label>
+              <label>
+                Описание
+                <textarea name="description" rows="2"></textarea>
+              </label>
+              <button type="submit">Создать проект</button>
+            </form>
+            <div id="projectList" class="list"></div>
+          </section>
+
+          <section class="card">
+            <h2>Участники проекта</h2>
+            <p id="selectedProjectName" class="muted">Проект не выбран</p>
+            <form id="memberForm" class="stack manager-only">
+              <label>
+                Пользователь
+                <select id="memberUserSelect" name="user_id"></select>
+              </label>
+              <button type="submit">Добавить участника</button>
+            </form>
+            <div id="memberList" class="list"></div>
+          </section>
+
+          <section class="card">
+            <h2>Спринты</h2>
+            <form id="sprintForm" class="stack manager-only">
+              <label>
+                Название
+                <input name="name" minlength="2" required />
+              </label>
+              <label>
+                Цель
+                <textarea name="goal" rows="2"></textarea>
+              </label>
+              <div class="row-two">
+                <label>
+                  Старт
+                  <input name="start_date" type="date" required />
+                </label>
+                <label>
+                  Финиш
+                  <input name="end_date" type="date" required />
+                </label>
+              </div>
+              <label>
+                Статус
+                <select name="status">
+                  <option value="planned">planned</option>
+                  <option value="active">active</option>
+                  <option value="completed">completed</option>
+                </select>
+              </label>
+              <button type="submit">Создать спринт</button>
+            </form>
+            <div id="sprintList" class="list"></div>
+          </section>
+        </aside>
+
+        <section class="column-right">
+          <section class="card">
+            <h2>Dashboard</h2>
+            <div id="dashboardSummary" class="dashboard-grid"></div>
+          </section>
+
+          <section class="card manager-only">
+            <h2>Новая задача</h2>
+            <form id="taskCreateForm" class="stack">
+              <label>
+                Заголовок
+                <input name="title" minlength="3" required />
+              </label>
+              <label>
+                Описание
+                <textarea name="description" rows="2"></textarea>
+              </label>
+              <div class="row-two">
+                <label>
+                  Тип
+                  <select name="type">
+                    <option value="feature">feature</option>
+                    <option value="bug">bug</option>
+                    <option value="tech_debt">tech_debt</option>
+                    <option value="documentation">documentation</option>
+                  </select>
+                </label>
+                <label>
+                  Приоритет
+                  <select name="priority">
+                    <option value="low">low</option>
+                    <option value="medium" selected>medium</option>
+                    <option value="high">high</option>
+                  </select>
+                </label>
+              </div>
+              <div class="row-two">
+                <label>
+                  Исполнитель
+                  <select id="taskAssigneeSelect" name="assignee_id"></select>
+                </label>
+                <label>
+                  Спринт
+                  <select id="taskSprintSelect" name="sprint_id"></select>
+                </label>
+              </div>
+              <button type="submit">Создать задачу</button>
+            </form>
+          </section>
+
+          <section class="card">
+            <h2>Фильтры задач</h2>
+            <form id="filterForm" class="filters-grid">
+              <label>
+                Статус
+                <select id="statusFilter" name="status">
+                  <option value="">all</option>
+                  <option value="open">open</option>
+                  <option value="selected">selected</option>
+                  <option value="in_progress">in_progress</option>
+                  <option value="ready_for_acceptance">ready_for_acceptance</option>
+                  <option value="closed">closed</option>
+                </select>
+              </label>
+              <label>
+                Тип
+                <select id="typeFilter" name="type">
+                  <option value="">all</option>
+                  <option value="feature">feature</option>
+                  <option value="bug">bug</option>
+                  <option value="tech_debt">tech_debt</option>
+                  <option value="documentation">documentation</option>
+                </select>
+              </label>
+              <label>
+                Приоритет
+                <select id="priorityFilter" name="priority">
+                  <option value="">all</option>
+                  <option value="low">low</option>
+                  <option value="medium">medium</option>
+                  <option value="high">high</option>
+                </select>
+              </label>
+              <label>
+                Исполнитель
+                <select id="assigneeFilter" name="assignee_id"></select>
+              </label>
+              <label>
+                Спринт
+                <select id="sprintFilter" name="sprint_id"></select>
+              </label>
+              <label>
+                Поиск
+                <input id="searchFilter" name="search" placeholder="title/description" />
+              </label>
+              <div class="actions-inline">
+                <button type="submit">Применить</button>
+                <button id="clearFiltersBtn" class="secondary" type="button">Сбросить</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="card">
+            <h2>Задачи</h2>
+            <div id="taskList" class="task-grid"></div>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <div id="globalMessage" class="toast hidden"></div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
