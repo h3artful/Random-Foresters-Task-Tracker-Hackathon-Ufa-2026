@@ -335,12 +335,15 @@ button:disabled {
 .task-grid {
   display: grid;
   gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 2px;
 }
 
 .scrum-board {
   display: grid;
   grid-template-columns: repeat(5, minmax(220px, 1fr));
   gap: 10px;
+  align-items: start;
   overflow-x: auto;
   padding-bottom: 4px;
 }
@@ -348,10 +351,12 @@ button:disabled {
 .board-column {
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #f7f9ff;
+  background: linear-gradient(180deg, #f8faff 0%, #f5f8ff 100%);
   display: grid;
   grid-template-rows: auto 1fr;
   min-height: 420px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .board-column-header {
@@ -405,6 +410,7 @@ button:disabled {
   min-height: 360px;
   border-top: 1px solid #dbe3f7;
   transition: background 0.15s ease, box-shadow 0.15s ease;
+  min-width: 0;
 }
 
 .board-dropzone.is-drop-allowed {
@@ -433,11 +439,17 @@ button:disabled {
   background: #fff;
   padding: 10px;
   display: grid;
-  gap: 8px;
+  gap: 9px;
+  min-width: 0;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(32, 58, 118, 0.06);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
 }
 
 .board-task-card:hover {
   border-color: #1d4fc6;
+  box-shadow: 0 8px 22px rgba(32, 58, 118, 0.16);
+  transform: translateY(-1px);
 }
 
 .board-task-card.is-dragging {
@@ -446,15 +458,19 @@ button:disabled {
 }
 
 .board-task-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 8px;
+  min-width: 0;
 }
 
 .board-task-title {
   font-size: 0.9rem;
-  line-height: 1.2;
+  line-height: 1.24;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .board-task-meta {
@@ -462,15 +478,22 @@ button:disabled {
   gap: 4px;
   font-size: 0.79rem;
   color: #4f5f81;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .board-drag-handle {
   padding: 4px 8px;
   border-radius: 8px;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   line-height: 1;
   min-width: 56px;
   cursor: grab;
+  justify-self: end;
+  flex-shrink: 0;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
 .board-drag-handle:active {
@@ -485,6 +508,7 @@ button:disabled {
 .board-task-actions {
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .board-inline-field {
@@ -492,10 +516,13 @@ button:disabled {
   gap: 4px;
   font-size: 0.8rem;
   color: var(--muted);
+  min-width: 0;
 }
 
 .board-inline-field select {
   padding: 6px 8px;
+  width: 100%;
+  min-width: 0;
 }
 
 .task-tabs {
@@ -686,6 +713,21 @@ button:disabled {
   gap: 8px;
   max-height: min(55vh, 440px);
   overflow: auto;
+}
+
+.developer-dashboard-list {
+  margin-top: 6px;
+}
+
+.workload-project-group {
+  display: grid;
+  gap: 8px;
+}
+
+.workload-project-title {
+  font-weight: 600;
+  color: #2a3d66;
+  padding: 2px 2px 0;
 }
 
 .workload-item {

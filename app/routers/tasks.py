@@ -7,10 +7,12 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..database import get_db
 from ..dependencies import get_project_or_404, get_sprint_or_404, get_task_or_404, get_user_or_404, is_project_member
-from ..models import AuditLog, ProjectMember, Task, TaskComment, TaskPriority, TaskStatus, TaskType, User, UserRole, utcnow_naive
+from ..models import AuditLog, Project, ProjectMember, Task, TaskComment, TaskPriority, TaskStatus, TaskType, User, UserRole, utcnow_naive
 from ..schemas import (
     AuditLogRead,
     DashboardSummary,
+    DeveloperDashboardRead,
+    DeveloperProjectSummary,
     TaskAssign,
     TaskCommentCreate,
     TaskCommentRead,
@@ -691,6 +693,65 @@ def add_task_comment(
 
     db.commit()
     return _task_comments_query(db).filter(TaskComment.id == comment.id).first()
+
+
+@router.get("/dashboard/developer", response_model=DeveloperDashboardRead)
+def developer_dashboard(
+    assignee_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeveloperDashboardRead:
+    target_assignee_id = assignee_id or current_user.id
+    if current_user.role == UserRole.developer and target_assignee_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Developer can view only own dashboard")
+
+    query = _task_query(db).filter(
+        Task.archived_at.is_(None),
+        Task.assignee_id == target_assignee_id,
+    )
+    if current_user.role == UserRole.developer:
+        query = query.join(ProjectMember, ProjectMember.project_id == Task.project_id).filter(
+            ProjectMember.user_id == current_user.id
+        )
+
+    tasks = query.order_by(Task.updated_at.desc()).all()
+    by_status = Counter(task.status.value for task in tasks)
+    active_tasks = sum(1 for task in tasks if task.status != TaskStatus.closed)
+
+    project_ids = {task.project_id for task in tasks}
+    project_name_by_id: dict[int, str] = {}
+    if project_ids:
+        project_name_by_id = {
+            project_id: project_name
+            for project_id, project_name in db.query(Project.id, Project.name)
+            .filter(Project.id.in_(project_ids))
+            .all()
+        }
+
+    project_totals = Counter(task.project_id for task in tasks)
+    project_statuses: dict[int, Counter[str]] = {}
+    for task in tasks:
+        project_statuses.setdefault(task.project_id, Counter())[task.status.value] += 1
+
+    by_project = [
+        DeveloperProjectSummary(
+            project_id=project_id,
+            project_name=project_name_by_id.get(project_id, f"Project #{project_id}"),
+            total_tasks=project_totals[project_id],
+            by_status=dict(project_statuses.get(project_id, Counter())),
+        )
+        for project_id in project_totals.keys()
+    ]
+    by_project.sort(key=lambda item: item.project_name.lower())
+
+    return DeveloperDashboardRead(
+        assignee_id=target_assignee_id,
+        total_tasks=len(tasks),
+        active_tasks=active_tasks,
+        by_status=dict(by_status),
+        by_project=by_project,
+        tasks=tasks,
+    )
 
 
 @router.get("/dashboard/summary", response_model=DashboardSummary)

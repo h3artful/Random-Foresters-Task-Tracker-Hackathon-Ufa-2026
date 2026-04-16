@@ -438,6 +438,140 @@ def test_access_and_filters(client: TestClient) -> None:
     assert forbidden_project.status_code == 403
 
 
+def test_developer_dashboard_returns_personal_cross_project_view(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+
+    manager_email = f"devdash-mgr-{suffix}@example.com"
+    developer_email = f"devdash-dev-{suffix}@example.com"
+    other_dev_email = f"devdash-other-{suffix}@example.com"
+
+    manager = register_user(client, "Dashboard Manager", manager_email)
+    developer = register_user(client, "Dashboard Developer", developer_email)
+    other_developer = register_user(client, "Dashboard Other", other_dev_email)
+
+    manager_headers = login_headers(client, manager_email)
+    developer_headers = login_headers(client, developer_email)
+
+    alpha_project = client.post(
+        "/api/projects",
+        json={"name": "Alpha Project", "description": "alpha"},
+        headers=manager_headers,
+    )
+    assert alpha_project.status_code == 201
+    alpha_project_id = alpha_project.json()["id"]
+
+    beta_project = client.post(
+        "/api/projects",
+        json={"name": "Beta Project", "description": "beta"},
+        headers=manager_headers,
+    )
+    assert beta_project.status_code == 201
+    beta_project_id = beta_project.json()["id"]
+
+    add_member_alpha = client.post(
+        f"/api/projects/{alpha_project_id}/members",
+        json={"user_id": developer["id"]},
+        headers=manager_headers,
+    )
+    assert add_member_alpha.status_code == 201
+
+    add_member_beta = client.post(
+        f"/api/projects/{beta_project_id}/members",
+        json={"user_id": developer["id"]},
+        headers=manager_headers,
+    )
+    assert add_member_beta.status_code == 201
+
+    task_open = client.post(
+        f"/api/projects/{alpha_project_id}/tasks",
+        json={
+            "title": "Alpha open task",
+            "description": "open",
+            "type": "feature",
+            "priority": "Medium",
+            "assignee_id": developer["id"],
+        },
+        headers=manager_headers,
+    )
+    assert task_open.status_code == 201
+    task_open_id = task_open.json()["id"]
+
+    task_selected = client.post(
+        f"/api/projects/{beta_project_id}/tasks",
+        json={
+            "title": "Beta selected task",
+            "description": "selected",
+            "type": "bug",
+            "priority": "High",
+            "assignee_id": developer["id"],
+        },
+        headers=manager_headers,
+    )
+    assert task_selected.status_code == 201
+    task_selected_id = task_selected.json()["id"]
+
+    move_selected = client.patch(
+        f"/api/tasks/{task_selected_id}/status",
+        json={"status": "selected"},
+        headers=developer_headers,
+    )
+    assert move_selected.status_code == 200
+
+    task_closed = client.post(
+        f"/api/projects/{beta_project_id}/tasks",
+        json={
+            "title": "Beta closed task",
+            "description": "closed",
+            "type": "documentation",
+            "priority": "Low",
+            "assignee_id": developer["id"],
+        },
+        headers=manager_headers,
+    )
+    assert task_closed.status_code == 201
+    task_closed_id = task_closed.json()["id"]
+
+    for next_status in ["selected", "in_progress", "ready_for_acceptance"]:
+        progress_response = client.patch(
+            f"/api/tasks/{task_closed_id}/status",
+            json={"status": next_status},
+            headers=developer_headers,
+        )
+        assert progress_response.status_code == 200
+
+    close_response = client.patch(
+        f"/api/tasks/{task_closed_id}/status",
+        json={"status": "closed"},
+        headers=manager_headers,
+    )
+    assert close_response.status_code == 200
+
+    own_dashboard = client.get("/api/dashboard/developer", headers=developer_headers)
+    assert own_dashboard.status_code == 200
+    payload = own_dashboard.json()
+    assert payload["assignee_id"] == developer["id"]
+    assert payload["total_tasks"] == 3
+    assert payload["active_tasks"] == 2
+    assert payload["by_status"]["open"] == 1
+    assert payload["by_status"]["selected"] == 1
+    assert payload["by_status"]["closed"] == 1
+    assert {task["id"] for task in payload["tasks"]} == {task_open_id, task_selected_id, task_closed_id}
+    assert {item["project_id"] for item in payload["by_project"]} == {alpha_project_id, beta_project_id}
+
+    forbidden_dashboard = client.get(
+        f"/api/dashboard/developer?assignee_id={other_developer['id']}",
+        headers=developer_headers,
+    )
+    assert forbidden_dashboard.status_code == 403
+
+    manager_view = client.get(
+        f"/api/dashboard/developer?assignee_id={developer['id']}",
+        headers=manager_headers,
+    )
+    assert manager_view.status_code == 200
+    assert manager_view.json()["total_tasks"] == 3
+
+
 def test_task_duration_estimate_endpoints_are_manager_only(client: TestClient) -> None:
     suffix = uuid4().hex[:8]
 
@@ -507,6 +641,54 @@ def test_task_duration_estimate_endpoints_are_manager_only(client: TestClient) -
         headers=developer_headers,
     )
     assert developer_single_estimate.status_code == 403
+
+
+def test_task_duration_estimate_handles_cyrillic_text_without_api_failure(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+
+    manager_email = f"ml-cyr-mgr-{suffix}@example.com"
+    developer_email = f"ml-cyr-dev-{suffix}@example.com"
+
+    manager = register_user(client, "ML Cyr Manager", manager_email)
+    developer = register_user(client, "ML Cyr Developer", developer_email)
+
+    manager_headers = login_headers(client, manager_email)
+
+    project = client.post(
+        "/api/projects",
+        json={"name": "ML Cyrillic Project", "description": "cyrillic prediction checks"},
+        headers=manager_headers,
+    )
+    assert project.status_code == 201
+    project_id = project.json()["id"]
+
+    add_member = client.post(
+        f"/api/projects/{project_id}/members",
+        json={"user_id": developer["id"]},
+        headers=manager_headers,
+    )
+    assert add_member.status_code == 201
+
+    create_task = client.post(
+        f"/api/projects/{project_id}/tasks",
+        json={
+            "title": "Починить цвет кнопки в профиле",
+            "description": "После обновления кнопка стала серой вместо зелёной",
+            "type": "feature",
+            "priority": "Low",
+            "assignee_id": developer["id"],
+        },
+        headers=manager_headers,
+    )
+    assert create_task.status_code == 201
+    task_id = create_task.json()["id"]
+
+    estimate_response = client.get(f"/api/tasks/{task_id}/estimate", headers=manager_headers)
+    assert estimate_response.status_code == 200
+    payload = estimate_response.json()
+    if payload is not None:
+        assert payload["task_id"] == task_id
+        assert "label" in payload
 
 
 def test_task_archive_flow_and_visibility(client: TestClient) -> None:

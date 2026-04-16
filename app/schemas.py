@@ -185,6 +185,22 @@ class DashboardSummary(BaseModel):
     by_type: dict[str, int]
 
 
+class DeveloperProjectSummary(BaseModel):
+    project_id: int
+    project_name: str
+    total_tasks: int
+    by_status: dict[str, int]
+
+
+class DeveloperDashboardRead(BaseModel):
+    assignee_id: int
+    total_tasks: int
+    active_tasks: int
+    by_status: dict[str, int]
+    by_project: list[DeveloperProjectSummary]
+    tasks: list[TaskRead]
+
+
 class TaskDurationEstimateRead(BaseModel):
     task_id: int
     hours: float

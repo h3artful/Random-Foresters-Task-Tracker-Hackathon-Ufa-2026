@@ -13,6 +13,7 @@ const state = {
   activeTaskTab: "tasks",
   taskTitleSearch: "",
   dashboard: null,
+  developerDashboard: null,
   historyByTask: {},
   taskEstimatesById: {},
   duplicateReview: null,
@@ -53,6 +54,8 @@ const els = {
   taskTabArchive: document.getElementById("taskTabArchive"),
   taskList: document.getElementById("taskList"),
   dashboardSummary: document.getElementById("dashboardSummary"),
+  developerDashboardSummary: document.getElementById("developerDashboardSummary"),
+  developerDashboardList: document.getElementById("developerDashboardList"),
   globalMessage: document.getElementById("globalMessage"),
   duplicateReviewModal: document.getElementById("duplicateReviewModal"),
   duplicateReviewMessage: document.getElementById("duplicateReviewMessage"),
@@ -107,6 +110,11 @@ const ROLE_LABELS = {
   developer: "Разработчик",
   manager: "Менеджер",
   admin: "Администратор",
+};
+const USER_ROLE_ORDER = {
+  admin: 0,
+  manager: 1,
+  developer: 2,
 };
 const SPRINT_STATUS_LABELS = {
   planned: "Запланирован",
@@ -179,6 +187,14 @@ function isManagerLike() {
 function currentProject() {
   if (!state.selectedProjectId) return null;
   return state.projects.find((item) => item.id === state.selectedProjectId) || null;
+}
+
+function projectNameById(projectId) {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (project) {
+    return project.name;
+  }
+  return `Проект #${projectId}`;
 }
 
 function getDevelopers() {
@@ -279,6 +295,7 @@ function clearSession() {
   state.sprints = [];
   state.members = [];
   state.dashboard = null;
+  state.developerDashboard = null;
   state.selectedProjectId = null;
   state.activeTaskTab = "tasks";
   state.taskTitleSearch = "";
@@ -356,6 +373,19 @@ async function loadProjectContext() {
   state.dashboard = dashboard;
 }
 
+async function loadDeveloperDashboard() {
+  if (!state.currentUser) {
+    state.developerDashboard = null;
+    return;
+  }
+
+  try {
+    state.developerDashboard = await api("/dashboard/developer");
+  } catch (_) {
+    state.developerDashboard = null;
+  }
+}
+
 function readTaskFilters() {
   return {
     status: els.statusFilter.value,
@@ -380,6 +410,7 @@ async function loadTasks() {
     },
   });
   await loadTaskEstimates();
+  await loadDeveloperDashboard();
 }
 
 async function loadTaskEstimates() {
@@ -562,7 +593,7 @@ async function openTaskDetailsModal(taskId) {
       }
     }
 
-    const estimateText = isManagerLike() ? ` | Оценка ML: ${estimate ? estimate.label : "-"}` : "";
+    const estimateText = isManagerLike() ? ` | Оценка ML: ${formatMlEstimate(estimate)}` : "";
     els.taskDetailsTitle.textContent = `#${task.id} ${task.title}`;
     els.taskDetailsMeta.textContent =
       `Статус: ${formatTaskStatus(task.status)} | Приоритет: ${formatPriority(task.priority)} | Тип: ${formatTaskType(task.type)} | Исполнитель: ${task.assignee ? task.assignee.name : "-"} | Затраченное время: ${formatSpentSummary(task)}${estimateText}`;
@@ -581,34 +612,53 @@ function renderDeveloperWorkloadList(tasks) {
     return;
   }
 
+  const tasksByProject = new Map();
   for (const task of tasks) {
-    const item = document.createElement("article");
-    item.className = "workload-item";
+    const bucket = tasksByProject.get(task.project_id) || [];
+    bucket.push(task);
+    tasksByProject.set(task.project_id, bucket);
+  }
 
-    const title = document.createElement("div");
-    title.className = "workload-item-title";
-    title.textContent = `#${task.id} ${task.title}`;
+  const sortedProjects = Array.from(tasksByProject.entries()).sort((left, right) =>
+    projectNameById(left[0]).localeCompare(projectNameById(right[0]), "ru"),
+  );
 
-    const meta = document.createElement("div");
-    meta.className = "tiny muted";
-    meta.textContent = `Статус: ${formatTaskStatus(task.status)} | Приоритет: ${formatPriority(task.priority)} | Тип: ${formatTaskType(task.type)}`;
+  for (const [projectId, projectTasks] of sortedProjects) {
+    const group = document.createElement("section");
+    group.className = "workload-project-group";
 
-    const sprint = document.createElement("div");
-    sprint.className = "tiny muted";
-    sprint.textContent = `Спринт: ${task.sprint ? task.sprint.name : "-"}`;
+    const header = document.createElement("div");
+    header.className = "workload-project-title";
+    header.textContent = `${projectNameById(projectId)}: ${projectTasks.length}`;
+    group.appendChild(header);
 
-    item.appendChild(title);
-    item.appendChild(meta);
-    item.appendChild(sprint);
-    els.developerWorkloadList.appendChild(item);
+    for (const task of projectTasks) {
+      const item = document.createElement("article");
+      item.className = "workload-item";
+
+      const title = document.createElement("div");
+      title.className = "workload-item-title";
+      title.textContent = `#${task.id} ${task.title}`;
+
+      const meta = document.createElement("div");
+      meta.className = "tiny muted";
+      meta.textContent = `Статус: ${formatTaskStatus(task.status)} | Приоритет: ${formatPriority(task.priority)} | Тип: ${formatTaskType(task.type)}`;
+
+      const sprint = document.createElement("div");
+      sprint.className = "tiny muted";
+      sprint.textContent = `Спринт: ${task.sprint ? task.sprint.name : "-"}`;
+
+      item.appendChild(title);
+      item.appendChild(meta);
+      item.appendChild(sprint);
+      group.appendChild(item);
+    }
+
+    els.developerWorkloadList.appendChild(group);
   }
 }
 
 async function openDeveloperWorkloadModal(user) {
-  if (!state.selectedProjectId) {
-    return;
-  }
-
   els.developerWorkloadTitle.textContent = `Загруженность: ${user.name}`;
   els.developerWorkloadSummary.textContent = "Загрузка...";
   els.developerWorkloadList.innerHTML = "";
@@ -617,7 +667,6 @@ async function openDeveloperWorkloadModal(user) {
   try {
     const assignedTasks = await api("/tasks", {
       query: {
-        project_id: state.selectedProjectId,
         assignee_id: user.id,
       },
     });
@@ -625,9 +674,10 @@ async function openDeveloperWorkloadModal(user) {
     const selectedCount = takenTasks.filter((task) => task.status === "selected").length;
     const inProgressCount = takenTasks.filter((task) => task.status === "in_progress").length;
     const reviewCount = takenTasks.filter((task) => task.status === "ready_for_acceptance").length;
+    const projectsInLoad = new Set(takenTasks.map((task) => task.project_id)).size;
 
     els.developerWorkloadSummary.textContent =
-      `Взято задач: ${takenTasks.length} (${formatTaskStatus("selected")}: ${selectedCount}, ${formatTaskStatus("in_progress")}: ${inProgressCount}, ${formatTaskStatus("ready_for_acceptance")}: ${reviewCount})`;
+      `Взято задач: ${takenTasks.length} в ${projectsInLoad} проектах (${formatTaskStatus("selected")}: ${selectedCount}, ${formatTaskStatus("in_progress")}: ${inProgressCount}, ${formatTaskStatus("ready_for_acceptance")}: ${reviewCount})`;
     renderDeveloperWorkloadList(takenTasks);
   } catch (error) {
     els.developerWorkloadSummary.textContent = "Не удалось загрузить загруженность";
@@ -650,10 +700,45 @@ function renderUserManagement() {
     return;
   }
 
-  for (const user of state.users) {
+  const sortedUsers = [...state.users].sort((left, right) => {
+    const leftOrder = USER_ROLE_ORDER[left.role] ?? Number.MAX_SAFE_INTEGER;
+    const rightOrder = USER_ROLE_ORDER[right.role] ?? Number.MAX_SAFE_INTEGER;
+    if (leftOrder !== rightOrder) {
+      return leftOrder - rightOrder;
+    }
+
+    const nameDiff = left.name.localeCompare(right.name, "ru");
+    if (nameDiff !== 0) {
+      return nameDiff;
+    }
+    return left.login.localeCompare(right.login, "ru");
+  });
+
+  for (const user of sortedUsers) {
     const node = document.createElement("div");
-    node.className = "member-item";
-    node.innerHTML = `<strong>${user.name}</strong><div class="tiny muted">${user.login} | ${formatRole(user.role)}</div>`;
+    const isDeveloper = user.role === "developer";
+    node.className = `member-item${isDeveloper ? " member-item-clickable" : ""}`;
+
+    const title = document.createElement("strong");
+    title.textContent = user.name;
+
+    const meta = document.createElement("div");
+    meta.className = "tiny muted";
+    meta.textContent = `${user.login} | ${formatRole(user.role)}`;
+
+    node.appendChild(title);
+    node.appendChild(meta);
+
+    if (isDeveloper) {
+      const hint = document.createElement("div");
+      hint.className = "tiny muted";
+      hint.textContent = "Нажми, чтобы посмотреть загруженность по всем проектам";
+      node.appendChild(hint);
+      node.addEventListener("click", async () => {
+        await openDeveloperWorkloadModal(user);
+      });
+    }
+
     els.userManagementList.appendChild(node);
   }
 }
@@ -682,7 +767,7 @@ function renderMemberBlock() {
         title.textContent = `${member.user.name} (${formatRole(member.user.role)})`;
         const hint = document.createElement("div");
         hint.className = "tiny muted";
-        hint.textContent = "Нажми, чтобы посмотреть загруженность";
+        hint.textContent = "Нажми, чтобы посмотреть загруженность по всем проектам";
         node.appendChild(title);
         node.appendChild(hint);
         node.addEventListener("click", async () => {
@@ -755,6 +840,125 @@ function renderDashboard() {
     .map(([key, value]) => `<div>${formatTaskType(key)}: <strong>${value}</strong></div>`)
     .join("") || "<div>пусто</div>"}`;
   els.dashboardSummary.appendChild(typeBox);
+}
+
+function formatStatusBreakdown(byStatus) {
+  const pieces = TASK_STATUSES.filter((statusValue) => Number(byStatus?.[statusValue] || 0) > 0).map(
+    (statusValue) => `${formatTaskStatus(statusValue)}: ${byStatus[statusValue]}`,
+  );
+  return pieces.join(" | ");
+}
+
+function renderDeveloperDashboard() {
+  if (!els.developerDashboardSummary || !els.developerDashboardList) {
+    return;
+  }
+
+  els.developerDashboardSummary.innerHTML = "";
+  els.developerDashboardList.innerHTML = "";
+
+  if (!state.currentUser) {
+    els.developerDashboardSummary.innerHTML = '<div class="muted">Нужна авторизация</div>';
+    return;
+  }
+
+  if (!state.developerDashboard) {
+    els.developerDashboardSummary.innerHTML = '<div class="muted">Данные не загружены</div>';
+    return;
+  }
+
+  const dashboard = state.developerDashboard;
+
+  const total = document.createElement("div");
+  total.className = "metric";
+  total.innerHTML = `<h3>Мои задачи</h3><strong>${dashboard.total_tasks}</strong>`;
+  els.developerDashboardSummary.appendChild(total);
+
+  const active = document.createElement("div");
+  active.className = "metric";
+  active.innerHTML = `<h3>Активные</h3><strong>${dashboard.active_tasks}</strong>`;
+  els.developerDashboardSummary.appendChild(active);
+
+  const projects = document.createElement("div");
+  projects.className = "metric";
+  projects.innerHTML = `<h3>Проекты</h3><strong>${dashboard.by_project.length}</strong>`;
+  els.developerDashboardSummary.appendChild(projects);
+
+  const statusBox = document.createElement("div");
+  statusBox.className = "metric";
+  statusBox.innerHTML = `<h3>По статусам</h3>${Object.entries(dashboard.by_status)
+    .map(([statusValue, count]) => `<div>${formatTaskStatus(statusValue)}: <strong>${count}</strong></div>`)
+    .join("") || "<div>пусто</div>"}`;
+  els.developerDashboardSummary.appendChild(statusBox);
+
+  const tasks = dashboard.tasks || [];
+  if (!tasks.length) {
+    els.developerDashboardList.innerHTML = '<div class="muted">Назначенных задач пока нет</div>';
+    return;
+  }
+
+  const taskBucketsByProject = new Map();
+  for (const task of tasks) {
+    const bucket = taskBucketsByProject.get(task.project_id) || [];
+    bucket.push(task);
+    taskBucketsByProject.set(task.project_id, bucket);
+  }
+
+  const projectMetaById = new Map(dashboard.by_project.map((item) => [item.project_id, item]));
+  const sortedProjectIds = Array.from(taskBucketsByProject.keys()).sort((left, right) => {
+    const leftName = projectMetaById.get(left)?.project_name || projectNameById(left);
+    const rightName = projectMetaById.get(right)?.project_name || projectNameById(right);
+    return leftName.localeCompare(rightName, "ru");
+  });
+
+  for (const projectId of sortedProjectIds) {
+    const projectTasks = taskBucketsByProject.get(projectId) || [];
+    const projectMeta = projectMetaById.get(projectId);
+    const projectName = projectMeta?.project_name || projectNameById(projectId);
+    const statusBreakdown = formatStatusBreakdown(projectMeta?.by_status || {});
+
+    const group = document.createElement("section");
+    group.className = "workload-project-group";
+
+    const header = document.createElement("div");
+    header.className = "workload-project-title";
+    header.textContent = `${projectName}: ${projectTasks.length}`;
+    group.appendChild(header);
+
+    if (statusBreakdown) {
+      const headerMeta = document.createElement("div");
+      headerMeta.className = "tiny muted";
+      headerMeta.textContent = statusBreakdown;
+      group.appendChild(headerMeta);
+    }
+
+    for (const task of projectTasks) {
+      const item = document.createElement("article");
+      item.className = "workload-item task-card-clickable";
+
+      const title = document.createElement("div");
+      title.className = "workload-item-title";
+      title.textContent = `#${task.id} ${task.title}`;
+
+      const meta = document.createElement("div");
+      meta.className = "tiny muted";
+      meta.textContent = `Статус: ${formatTaskStatus(task.status)} | Приоритет: ${formatPriority(task.priority)} | Тип: ${formatTaskType(task.type)}`;
+
+      const details = document.createElement("div");
+      details.className = "tiny muted";
+      details.textContent = `Спринт: ${task.sprint ? task.sprint.name : "-"} | Затраченное время: ${formatSpentSummary(task)}`;
+
+      item.appendChild(title);
+      item.appendChild(meta);
+      item.appendChild(details);
+      item.addEventListener("click", async () => {
+        await openTaskDetailsModal(task.id);
+      });
+      group.appendChild(item);
+    }
+
+    els.developerDashboardList.appendChild(group);
+  }
 }
 
 function renderTaskSelectors() {
@@ -914,6 +1118,71 @@ function formatSpentSummary(task) {
   return `авто: ${trackedText} | вручную: ${formatDuration(task.reported_seconds)}${comment}`;
 }
 
+function formatMlEstimate(estimate) {
+  const pluralRu = (value, one, few, many) => {
+    const abs = Math.abs(value);
+    const mod100 = abs % 100;
+    const mod10 = abs % 10;
+    if (mod100 >= 11 && mod100 <= 14) {
+      return many;
+    }
+    if (mod10 === 1) {
+      return one;
+    }
+    if (mod10 >= 2 && mod10 <= 4) {
+      return few;
+    }
+    return many;
+  };
+
+  if (!estimate) {
+    return "-";
+  }
+
+  const rawHours = Number(estimate.hours);
+  if (!Number.isFinite(rawHours) || rawHours <= 0) {
+    return "меньше часа";
+  }
+
+  let remainingHours = Math.round(rawHours);
+  if (remainingHours <= 0) {
+    return "меньше часа";
+  }
+
+  const HOURS_IN_MONTH = 24 * 30;
+  const HOURS_IN_WEEK = 24 * 7;
+  const HOURS_IN_DAY = 24;
+
+  const months = Math.floor(remainingHours / HOURS_IN_MONTH);
+  remainingHours -= months * HOURS_IN_MONTH;
+
+  const weeks = Math.floor(remainingHours / HOURS_IN_WEEK);
+  remainingHours -= weeks * HOURS_IN_WEEK;
+
+  const days = Math.floor(remainingHours / HOURS_IN_DAY);
+  remainingHours -= days * HOURS_IN_DAY;
+
+  const parts = [];
+  if (months > 0) {
+    parts.push(`${months} ${pluralRu(months, "месяц", "месяца", "месяцев")}`);
+  }
+  if (weeks > 0) {
+    parts.push(`${weeks} ${pluralRu(weeks, "неделя", "недели", "недель")}`);
+  }
+  if (days > 0) {
+    parts.push(`${days} ${pluralRu(days, "день", "дня", "дней")}`);
+  }
+  if (remainingHours > 0) {
+    parts.push(`${remainingHours} ${pluralRu(remainingHours, "час", "часа", "часов")}`);
+  }
+
+  if (!parts.length) {
+    return "меньше часа";
+  }
+
+  return `~${parts.join(" ")}`;
+}
+
 function getManualTimeMinutes() {
   const days = Number(els.manualTimeDays.value || 0);
   const hours = Number(els.manualTimeHours.value || 0);
@@ -1059,7 +1328,7 @@ function createHistoryControls(task) {
 function renderArchiveTaskList(tasks) {
   for (const task of tasks) {
     const estimate = state.taskEstimatesById[task.id];
-    const estimateLine = isManagerLike() ? `<div>Оценка ML: ${estimate ? estimate.label : "-"}</div>` : "";
+    const estimateLine = isManagerLike() ? `<div>Оценка ML: ${formatMlEstimate(estimate)}</div>` : "";
     const card = document.createElement("article");
     card.className = "task-card";
     bindTaskOpenHandler(card, task.id);
@@ -1156,7 +1425,7 @@ function createBoardTaskCard(task, developers) {
   top.appendChild(dragHandle);
 
   const estimate = state.taskEstimatesById[task.id];
-  const estimateLine = isManagerLike() ? `<div>Оценка ML: ${estimate ? estimate.label : "-"}</div>` : "";
+  const estimateLine = isManagerLike() ? `<div>Оценка ML: ${formatMlEstimate(estimate)}</div>` : "";
   const meta = document.createElement("div");
   meta.className = "board-task-meta";
   meta.innerHTML = `
@@ -1363,6 +1632,7 @@ function renderWorkspace() {
   renderMemberBlock();
   renderSprintBlock();
   renderDashboard();
+  renderDeveloperDashboard();
   renderTaskSelectors();
   renderTaskTabs();
   renderTaskList();

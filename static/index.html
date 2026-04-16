@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Трекер задач Random Foresters</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260416-7" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260416-8" />
   </head>
   <body>
     <header class="topbar">
@@ -132,8 +132,15 @@
 
         <section class="column-right">
           <section class="card">
-            <h2>Сводка</h2>
+            <h2>Сводка по задачам в проекте</h2>
             <div id="dashboardSummary" class="dashboard-grid"></div>
+          </section>
+
+          <section class="card developer-only">
+            <h2>Dashboard разработчика</h2>
+            <p class="muted">Мои задачи по всем проектам</p>
+            <div id="developerDashboardSummary" class="dashboard-grid"></div>
+            <div id="developerDashboardList" class="workload-list developer-dashboard-list"></div>
           </section>
 
           <section class="card manager-only">
@@ -340,6 +347,6 @@
 
     <div id="globalMessage" class="toast hidden"></div>
 
-    <script src="/static/app.js?v=20260416-15"></script>
+    <script src="/static/app.js?v=20260417-18"></script>
   </body>
 </html>

@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+from .local_ru_en_translator import get_local_ru_en_translator
+
 try:
     import joblib
     import numpy as np
@@ -43,6 +45,7 @@ class DurationEstimator:
         self.priority_map: dict[str, int] = {}
         self.priority_median: dict[float, float] = {}
         self.available = False
+        self.translator = get_local_ru_en_translator()
 
         self._load()
 
@@ -113,7 +116,12 @@ class DurationEstimator:
             return None
 
         try:
-            features = self._build_features(summary, issue_type, priority, created_at)
+            summary_for_model = self.translator.translate_to_english(summary)
+            if summary_for_model is None:
+                # Translation is required (Cyrillic input) but unavailable.
+                return None
+
+            features = self._build_features(summary_for_model, issue_type, priority, created_at)
             log_prediction = self.model.predict(features)[0]
             hours = max(0.0, float(np.expm1(log_prediction)))
             days = hours / 24
