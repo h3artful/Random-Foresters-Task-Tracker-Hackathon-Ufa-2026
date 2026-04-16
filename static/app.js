@@ -27,8 +27,9 @@ const els = {
   refreshBtn: document.getElementById("refreshBtn"),
   logoutBtn: document.getElementById("logoutBtn"),
   loginForm: document.getElementById("loginForm"),
-  registerForm: document.getElementById("registerForm"),
   projectCreateForm: document.getElementById("projectCreateForm"),
+  userCreateForm: document.getElementById("userCreateForm"),
+  userManagementList: document.getElementById("userManagementList"),
   projectList: document.getElementById("projectList"),
   selectedProjectName: document.getElementById("selectedProjectName"),
   memberForm: document.getElementById("memberForm"),
@@ -254,6 +255,10 @@ function renderAuthState() {
 }
 
 async function loadUsers() {
+  if (!isManagerLike()) {
+    state.users = [];
+    return;
+  }
   state.users = await api("/users");
 }
 
@@ -520,6 +525,29 @@ async function openDeveloperWorkloadModal(user) {
   } catch (error) {
     els.developerWorkloadSummary.textContent = "Не удалось загрузить загруженность";
     els.developerWorkloadList.innerHTML = `<div class="muted">${error.message}</div>`;
+  }
+}
+
+function renderUserManagement() {
+  if (!els.userManagementList) {
+    return;
+  }
+
+  els.userManagementList.innerHTML = "";
+  if (!isManagerLike()) {
+    return;
+  }
+
+  if (!state.users.length) {
+    els.userManagementList.innerHTML = '<div class="muted">Пользователи не загружены</div>';
+    return;
+  }
+
+  for (const user of state.users) {
+    const node = document.createElement("div");
+    node.className = "member-item";
+    node.innerHTML = `<strong>${user.name}</strong><div class="tiny muted">${user.login} | ${user.role}</div>`;
+    els.userManagementList.appendChild(node);
   }
 }
 
@@ -1210,6 +1238,7 @@ function renderTaskList() {
 
 function renderWorkspace() {
   renderProjectList();
+  renderUserManagement();
   renderMemberBlock();
   renderSprintBlock();
   renderDashboard();
@@ -1275,7 +1304,7 @@ els.loginForm.addEventListener("submit", async (event) => {
     const response = await api("/auth/login", {
       method: "POST",
       body: {
-        email: String(formData.get("email") || ""),
+        login: String(formData.get("login") || ""),
         password: String(formData.get("password") || ""),
       },
     });
@@ -1288,22 +1317,25 @@ els.loginForm.addEventListener("submit", async (event) => {
   }
 });
 
-els.registerForm.addEventListener("submit", async (event) => {
+els.userCreateForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const formData = new FormData(els.registerForm);
+  if (!isManagerLike()) return;
 
+  const formData = new FormData(els.userCreateForm);
   try {
-    const response = await api("/auth/register", {
+    const response = await api("/users", {
       method: "POST",
       body: {
         name: String(formData.get("name") || ""),
-        email: String(formData.get("email") || ""),
+        login: String(formData.get("login") || ""),
         password: String(formData.get("password") || ""),
         role: String(formData.get("role") || "developer"),
       },
     });
-    els.registerForm.reset();
-    showMessage(`Пользователь ${response.name} создан с ролью ${response.role}`, "success");
+    els.userCreateForm.reset();
+    await loadUsers();
+    renderUserManagement();
+    showMessage(`Пользователь ${response.name} (${response.login}) создан`, "success");
   } catch (error) {
     showMessage(error.message, "error");
   }

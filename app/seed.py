@@ -6,18 +6,18 @@ from .database import Base, SessionLocal, engine
 from .models import Project, ProjectMember, Sprint, SprintStatus, Task, TaskPriority, TaskStatus, TaskType, User, UserRole
 from .security import hash_password
 
-DEMO_MANAGER_EMAIL = "manager@demo.local"
-DEMO_DEVELOPER_EMAIL = "developer@demo.local"
-DEMO_ADMIN_EMAIL = "admin@demo.local"
+DEMO_MANAGER_LOGIN = "manager"
+DEMO_DEVELOPER_LOGIN = "developer"
+DEMO_ADMIN_LOGIN = "admin"
 DEMO_PASSWORD = "demo12345"
 
 
-def _ensure_user(db, *, name: str, email: str, role: UserRole) -> User:
-    user = db.query(User).filter(User.email == email).first()
+def _ensure_user(db, *, name: str, login: str, role: UserRole) -> User:
+    user = db.query(User).filter(User.login == login).first()
     if user is None:
         user = User(
             name=name,
-            email=email,
+            login=login,
             role=role,
             password_hash=hash_password(DEMO_PASSWORD),
         )
@@ -137,19 +137,19 @@ def seed_demo_data() -> None:
         manager = _ensure_user(
             db,
             name="Demo Manager",
-            email=DEMO_MANAGER_EMAIL,
+            login=DEMO_MANAGER_LOGIN,
             role=UserRole.manager,
         )
         developer = _ensure_user(
             db,
             name="Demo Developer",
-            email=DEMO_DEVELOPER_EMAIL,
+            login=DEMO_DEVELOPER_LOGIN,
             role=UserRole.developer,
         )
         admin = _ensure_user(
             db,
             name="Demo Admin",
-            email=DEMO_ADMIN_EMAIL,
+            login=DEMO_ADMIN_LOGIN,
             role=UserRole.admin,
         )
 
@@ -226,9 +226,9 @@ def seed_demo_data() -> None:
         db.close()
 
     print("Demo data is ready.")
-    print(f"Manager login: {DEMO_MANAGER_EMAIL} / {DEMO_PASSWORD}")
-    print(f"Developer login: {DEMO_DEVELOPER_EMAIL} / {DEMO_PASSWORD}")
-    print(f"Admin login: {DEMO_ADMIN_EMAIL} / {DEMO_PASSWORD}")
+    print(f"Manager login: {DEMO_MANAGER_LOGIN} / {DEMO_PASSWORD}")
+    print(f"Developer login: {DEMO_DEVELOPER_LOGIN} / {DEMO_PASSWORD}")
+    print(f"Admin login: {DEMO_ADMIN_LOGIN} / {DEMO_PASSWORD}")
 
 
 if __name__ == "__main__":

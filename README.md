@@ -3,7 +3,8 @@
 Task management service aligned with hackathon requirements.
 
 ## Implemented MVP
-- Registration/login with JWT
+- Login with JWT
+- User creation is restricted to `manager`/`admin`
 - Roles: `manager`, `developer`
 - Projects and participants
 - Sprints inside projects

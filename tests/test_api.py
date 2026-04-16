@@ -24,6 +24,7 @@ from app.models import Task, utcnow_naive
 def setup_test_db() -> None:
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+    register_user._creator = None
     yield
     Base.metadata.drop_all(bind=engine)
 
@@ -41,17 +42,38 @@ def client() -> TestClient:
         yield test_client
 
 
-def register_user(client: TestClient, name: str, email: str, password: str = "pass-12345") -> dict:
-    response = client.post(
-        "/api/auth/register",
-        json={"name": name, "email": email, "password": password},
-    )
+def register_user(
+    client: TestClient,
+    name: str,
+    login: str,
+    password: str = "pass-12345",
+    role: str | None = None,
+) -> dict:
+    payload = {"name": name, "login": login, "password": password}
+    if role is not None:
+        payload["role"] = role
+
+    response = client.post("/api/auth/register", json=payload)
+    if response.status_code == 201:
+        user_payload = response.json()
+        if user_payload["role"] in {"manager", "admin"}:
+            register_user._creator = {"login": login, "password": password}
+        return user_payload
+
+    if response.status_code == 403:
+        creator = getattr(register_user, "_creator", None)
+        assert creator is not None
+        creator_headers = login_headers(client, creator["login"], creator["password"])
+        create_response = client.post("/api/users", json=payload, headers=creator_headers)
+        assert create_response.status_code == 201
+        return create_response.json()
+
     assert response.status_code == 201
     return response.json()
 
 
-def login_headers(client: TestClient, email: str, password: str = "pass-12345") -> dict[str, str]:
-    response = client.post("/api/auth/login", json={"email": email, "password": password})
+def login_headers(client: TestClient, login: str, password: str = "pass-12345") -> dict[str, str]:
+    response = client.post("/api/auth/login", json={"login": login, "password": password})
     assert response.status_code == 200
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
@@ -60,20 +82,22 @@ def login_headers(client: TestClient, email: str, password: str = "pass-12345") 
 def test_auth_and_roles(client: TestClient) -> None:
     suffix = uuid4().hex[:8]
 
-    manager = register_user(client, "Manager", f"manager-{suffix}@example.com")
-    developer = register_user(client, "Developer", f"developer-{suffix}@example.com")
+    manager = register_user(client, "Manager", f"manager-{suffix}")
+    developer = register_user(client, "Developer", f"developer-{suffix}")
 
     assert manager["role"] == "manager"
     assert developer["role"] == "developer"
 
+    manager_headers = login_headers(client, manager["login"])
     explicit_role_payload = client.post(
-        "/api/auth/register",
+        "/api/users",
         json={
             "name": "Role Selected Manager",
-            "email": f"selected-manager-{suffix}@example.com",
+            "login": f"selected-manager-{suffix}",
             "password": "pass-12345",
             "role": "manager",
         },
+        headers=manager_headers,
     )
     assert explicit_role_payload.status_code == 201
     assert explicit_role_payload.json()["role"] == "manager"
@@ -81,9 +105,53 @@ def test_auth_and_roles(client: TestClient) -> None:
     # Swagger OAuth2 password flow sends form fields: username/password.
     oauth_form_login = client.post(
         "/api/auth/login",
-        data={"username": manager["email"], "password": "pass-12345"},
+        data={"username": manager["login"], "password": "pass-12345"},
     )
     assert oauth_form_login.status_code == 200
+
+
+def test_user_creation_is_restricted_to_manager_or_admin(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+
+    manager = register_user(client, "Manager Restrict", f"manager-restrict-{suffix}")
+    developer = register_user(client, "Developer Restrict", f"developer-restrict-{suffix}")
+
+    manager_headers = login_headers(client, manager["login"])
+    developer_headers = login_headers(client, developer["login"])
+
+    manager_can_create = client.post(
+        "/api/users",
+        json={
+            "name": "Created By Manager",
+            "login": f"created-by-manager-{suffix}",
+            "password": "pass-12345",
+            "role": "developer",
+        },
+        headers=manager_headers,
+    )
+    assert manager_can_create.status_code == 201
+
+    developer_cannot_create = client.post(
+        "/api/users",
+        json={
+            "name": "Created By Developer",
+            "login": f"created-by-developer-{suffix}",
+            "password": "pass-12345",
+            "role": "developer",
+        },
+        headers=developer_headers,
+    )
+    assert developer_cannot_create.status_code == 403
+
+    public_register_disabled = client.post(
+        "/api/auth/register",
+        json={
+            "name": "Public Register User",
+            "login": f"public-register-{suffix}",
+            "password": "pass-12345",
+        },
+    )
+    assert public_register_disabled.status_code == 403
 
 
 def test_project_sprint_task_flow(client: TestClient) -> None:
@@ -455,17 +523,13 @@ def test_admin_can_override_statuses_and_restore_from_archive(client: TestClient
     admin_email = f"admin-{suffix}@example.com"
     developer_email = f"admin-dev-{suffix}@example.com"
 
-    admin_register = client.post(
-        "/api/auth/register",
-        json={
-            "name": "Super Admin",
-            "email": admin_email,
-            "password": "pass-12345",
-            "role": "admin",
-        },
+    admin_register = register_user(
+        client,
+        name="Super Admin",
+        login=admin_email,
+        role="admin",
     )
-    assert admin_register.status_code == 201
-    assert admin_register.json()["role"] == "admin"
+    assert admin_register["role"] == "admin"
 
     developer = register_user(client, "Admin Project Dev", developer_email)
     admin_headers = login_headers(client, admin_email)
@@ -792,16 +856,13 @@ def test_time_tracking_validates_manual_payload_and_stores_reported_time(client:
     admin_email = f"time-admin-{suffix}@example.com"
     developer_email = f"time2-dev-{suffix}@example.com"
 
-    admin_register = client.post(
-        "/api/auth/register",
-        json={
-            "name": "Time Admin",
-            "email": admin_email,
-            "password": "pass-12345",
-            "role": "admin",
-        },
+    admin_register = register_user(
+        client,
+        name="Time Admin",
+        login=admin_email,
+        role="admin",
     )
-    assert admin_register.status_code == 201
+    assert admin_register["role"] == "admin"
 
     developer = register_user(client, "Time Dev Two", developer_email)
     admin_headers = login_headers(client, admin_email)

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Random Foresters's Task Tracker</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260416-6" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260416-7" />
   </head>
   <body>
     <header class="topbar">
@@ -21,43 +21,18 @@
 
     <main class="container">
       <section id="authSection" class="auth-grid">
-        <form id="loginForm" class="card">
+        <form id="loginForm" class="card auth-card">
           <h2>Вход</h2>
+          <p class="auth-subtitle">Войдите, чтобы продолжить работу с трекером задач</p>
           <label>
-            Email
-            <input name="email" type="email" required />
+            Логин
+            <input name="login" type="text" minlength="3" required />
           </label>
           <label>
             Пароль
             <input name="password" type="password" minlength="8" required />
           </label>
           <button type="submit">Войти</button>
-        </form>
-
-        <form id="registerForm" class="card">
-          <h2>Регистрация</h2>
-          <label>
-            Имя
-            <input name="name" minlength="2" required />
-          </label>
-          <label>
-            Email
-            <input name="email" type="email" required />
-          </label>
-          <label>
-            Пароль
-            <input name="password" type="password" minlength="8" required />
-          </label>
-          <label>
-            Роль
-            <select name="role">
-              <option value="developer" selected>developer</option>
-              <option value="manager">manager</option>
-              <option value="admin">admin</option>
-            </select>
-          </label>
-          <button type="submit">Создать аккаунт</button>
-          <p class="muted tiny">Можно выбрать роль при регистрации.</p>
         </form>
       </section>
 
@@ -77,6 +52,34 @@
               <button type="submit">Создать проект</button>
             </form>
             <div id="projectList" class="list"></div>
+          </section>
+
+          <section class="card manager-only">
+            <h2>Пользователи</h2>
+            <form id="userCreateForm" class="stack">
+              <label>
+                Имя
+                <input name="name" minlength="2" required />
+              </label>
+              <label>
+                Логин
+                <input name="login" minlength="3" required />
+              </label>
+              <label>
+                Пароль
+                <input name="password" type="password" minlength="8" required />
+              </label>
+              <label>
+                Роль
+                <select name="role">
+                  <option value="developer" selected>developer</option>
+                  <option value="manager">manager</option>
+                  <option value="admin">admin</option>
+                </select>
+              </label>
+              <button type="submit">Создать пользователя</button>
+            </form>
+            <div id="userManagementList" class="list"></div>
           </section>
 
           <section class="card">
@@ -327,6 +330,6 @@
 
     <div id="globalMessage" class="toast hidden"></div>
 
-    <script src="/static/app.js?v=20260416-12"></script>
+    <script src="/static/app.js?v=20260416-13"></script>
   </body>
 </html>
