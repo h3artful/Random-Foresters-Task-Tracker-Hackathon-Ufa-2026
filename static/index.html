@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Random Foresters's Task Tracker</title>
+    <title>Трекер задач Random Foresters</title>
     <link rel="stylesheet" href="/static/styles.css?v=20260416-7" />
   </head>
   <body>
     <header class="topbar">
       <div>
-        <h1>Random Foresters's Task Tracker</h1>
+        <h1>Трекер задач Random Foresters</h1>
         <p>Проекты, спринты, задачи и контроль статусов</p>
       </div>
       <div class="topbar-actions">
@@ -72,9 +72,9 @@
               <label>
                 Роль
                 <select name="role">
-                  <option value="developer" selected>developer</option>
-                  <option value="manager">manager</option>
-                  <option value="admin">admin</option>
+                  <option value="developer" selected>Разработчик</option>
+                  <option value="manager">Менеджер</option>
+                  <option value="admin">Администратор</option>
                 </select>
               </label>
               <button type="submit">Создать пользователя</button>
@@ -119,9 +119,9 @@
               <label>
                 Статус
                 <select name="status">
-                  <option value="planned">planned</option>
-                  <option value="active">active</option>
-                  <option value="completed">completed</option>
+                  <option value="planned">Запланирован</option>
+                  <option value="active">Активный</option>
+                  <option value="completed">Завершён</option>
                 </select>
               </label>
               <button type="submit">Создать спринт</button>
@@ -132,7 +132,7 @@
 
         <section class="column-right">
           <section class="card">
-            <h2>Dashboard</h2>
+            <h2>Сводка</h2>
             <div id="dashboardSummary" class="dashboard-grid"></div>
           </section>
 
@@ -151,23 +151,23 @@
                 <label>
                   Тип
                   <select name="type">
-                    <option value="feature">feature</option>
-                    <option value="bug">bug</option>
-                    <option value="tech_debt">tech_debt</option>
-                    <option value="documentation">documentation</option>
+                    <option value="feature">Фича</option>
+                    <option value="bug">Баг</option>
+                    <option value="tech_debt">Техдолг</option>
+                    <option value="documentation">Документация</option>
                   </select>
                 </label>
                 <label>
                   Приоритет
                   <select name="priority">
-                    <option value="Trivial">Trivial</option>
-                    <option value="Minor">Minor</option>
-                    <option value="Low">Low</option>
-                    <option value="Medium" selected>Medium</option>
-                    <option value="Major">Major</option>
-                    <option value="High">High</option>
-                    <option value="Critical">Critical</option>
-                    <option value="Blocker">Blocker</option>
+                    <option value="Trivial">Тривиальный</option>
+                    <option value="Minor">Незначительный</option>
+                    <option value="Low">Низкий</option>
+                    <option value="Medium" selected>Средний</option>
+                    <option value="Major">Крупный</option>
+                    <option value="High">Высокий</option>
+                    <option value="Critical">Критический</option>
+                    <option value="Blocker">Блокирующий</option>
                   </select>
                 </label>
               </div>
@@ -199,36 +199,36 @@
               <label>
                 Статус
                 <select id="statusFilter" name="status">
-                  <option value="">all</option>
-                  <option value="open">open</option>
-                  <option value="selected">selected</option>
-                  <option value="in_progress">in_progress</option>
-                  <option value="ready_for_acceptance">ready_for_acceptance</option>
-                  <option value="closed">closed</option>
+                  <option value="">Все</option>
+                  <option value="open">Открыта</option>
+                  <option value="selected">Выбрана</option>
+                  <option value="in_progress">В работе</option>
+                  <option value="ready_for_acceptance">На проверке</option>
+                  <option value="closed">Закрыта</option>
                 </select>
               </label>
               <label>
                 Тип
                 <select id="typeFilter" name="type">
-                  <option value="">all</option>
-                  <option value="feature">feature</option>
-                  <option value="bug">bug</option>
-                  <option value="tech_debt">tech_debt</option>
-                  <option value="documentation">documentation</option>
+                  <option value="">Все</option>
+                  <option value="feature">Фича</option>
+                  <option value="bug">Баг</option>
+                  <option value="tech_debt">Техдолг</option>
+                  <option value="documentation">Документация</option>
                 </select>
               </label>
               <label>
                 Приоритет
                 <select id="priorityFilter" name="priority">
-                  <option value="">all</option>
-                  <option value="Trivial">Trivial</option>
-                  <option value="Minor">Minor</option>
-                  <option value="Low">Low</option>
-                  <option value="Medium">Medium</option>
-                  <option value="Major">Major</option>
-                  <option value="High">High</option>
-                  <option value="Critical">Critical</option>
-                  <option value="Blocker">Blocker</option>
+                  <option value="">Все</option>
+                  <option value="Trivial">Тривиальный</option>
+                  <option value="Minor">Незначительный</option>
+                  <option value="Low">Низкий</option>
+                  <option value="Medium">Средний</option>
+                  <option value="Major">Крупный</option>
+                  <option value="High">Высокий</option>
+                  <option value="Critical">Критический</option>
+                  <option value="Blocker">Блокирующий</option>
                 </select>
               </label>
               <label>
@@ -247,7 +247,7 @@
           </section>
 
           <section class="card">
-            <div class="task-tabs" role="tablist" aria-label="Task views">
+            <div class="task-tabs" role="tablist" aria-label="Представления задач">
               <button id="taskTabActive" class="secondary active" type="button" role="tab" aria-selected="true">
                 Задачи
               </button>
@@ -340,6 +340,6 @@
 
     <div id="globalMessage" class="toast hidden"></div>
 
-    <script src="/static/app.js?v=20260416-14"></script>
+    <script src="/static/app.js?v=20260416-15"></script>
   </body>
 </html>

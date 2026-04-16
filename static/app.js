@@ -97,12 +97,72 @@ const NEXT_STATUS = {
 const TASK_STATUSES = ["open", "selected", "in_progress", "ready_for_acceptance", "closed"];
 const TAKEN_TASK_STATUSES = new Set(["selected", "in_progress", "ready_for_acceptance"]);
 const BOARD_COLUMNS = [
-  { status: "open", title: "BACKLOG" },
-  { status: "selected", title: "TO DO" },
-  { status: "in_progress", title: "IN PROGRESS" },
-  { status: "ready_for_acceptance", title: "REVIEW / QA" },
-  { status: "closed", title: "DONE" },
+  { status: "open", title: "БЭКЛОГ" },
+  { status: "selected", title: "К ВЫПОЛНЕНИЮ" },
+  { status: "in_progress", title: "В РАБОТЕ" },
+  { status: "ready_for_acceptance", title: "ПРОВЕРКА" },
+  { status: "closed", title: "ГОТОВО" },
 ];
+const ROLE_LABELS = {
+  developer: "Разработчик",
+  manager: "Менеджер",
+  admin: "Администратор",
+};
+const SPRINT_STATUS_LABELS = {
+  planned: "Запланирован",
+  active: "Активный",
+  completed: "Завершён",
+};
+const TASK_TYPE_LABELS = {
+  feature: "Фича",
+  bug: "Баг",
+  tech_debt: "Техдолг",
+  documentation: "Документация",
+};
+const TASK_STATUS_LABELS = {
+  open: "Открыта",
+  selected: "Выбрана",
+  in_progress: "В работе",
+  ready_for_acceptance: "На проверке",
+  closed: "Закрыта",
+};
+const PRIORITY_LABELS = {
+  Trivial: "Тривиальный",
+  Minor: "Незначительный",
+  Low: "Низкий",
+  Medium: "Средний",
+  Major: "Крупный",
+  High: "Высокий",
+  Critical: "Критический",
+  Blocker: "Блокирующий",
+};
+
+function labelByMap(value, labels, fallback = "-") {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+  return labels[value] || value;
+}
+
+function formatRole(role) {
+  return labelByMap(role, ROLE_LABELS);
+}
+
+function formatSprintStatus(status) {
+  return labelByMap(status, SPRINT_STATUS_LABELS);
+}
+
+function formatTaskType(type) {
+  return labelByMap(type, TASK_TYPE_LABELS);
+}
+
+function formatTaskStatus(status) {
+  return labelByMap(status, TASK_STATUS_LABELS);
+}
+
+function formatPriority(priority) {
+  return labelByMap(priority, PRIORITY_LABELS);
+}
 
 function isManager() {
   return state.currentUser?.role === "manager";
@@ -183,7 +243,7 @@ async function api(path, options = {}) {
       clearSession();
     }
     let errorPayload = null;
-    let detail = "Request failed";
+    let detail = "Ошибка запроса";
     try {
       errorPayload = await response.json();
       if (typeof errorPayload?.detail === "string") {
@@ -246,7 +306,7 @@ function renderAuthState() {
   els.logoutBtn.classList.toggle("hidden", !loggedIn);
 
   if (loggedIn) {
-    els.sessionInfo.textContent = `${state.currentUser.name} (${state.currentUser.role})`;
+    els.sessionInfo.textContent = `${state.currentUser.name} (${formatRole(state.currentUser.role)})`;
   } else {
     els.sessionInfo.textContent = "Не авторизован";
   }
@@ -431,7 +491,7 @@ function renderTaskComments(comments) {
     const meta = document.createElement("div");
     meta.className = "comment-meta";
     const createdAt = new Date(comment.created_at).toLocaleString();
-    meta.textContent = `${createdAt} | ${comment.author.name} (${comment.author.role})`;
+    meta.textContent = `${createdAt} | ${comment.author.name} (${formatRole(comment.author.role)})`;
 
     const body = document.createElement("div");
     body.className = "comment-body";
@@ -502,10 +562,10 @@ async function openTaskDetailsModal(taskId) {
       }
     }
 
-    const estimateText = isManagerLike() ? ` | ML ETA: ${estimate ? estimate.label : "-"}` : "";
+    const estimateText = isManagerLike() ? ` | Оценка ML: ${estimate ? estimate.label : "-"}` : "";
     els.taskDetailsTitle.textContent = `#${task.id} ${task.title}`;
     els.taskDetailsMeta.textContent =
-      `Статус: ${task.status} | Приоритет: ${task.priority} | Тип: ${task.type} | Исполнитель: ${task.assignee ? task.assignee.name : "-"} | Spent: ${formatSpentSummary(task)}${estimateText}`;
+      `Статус: ${formatTaskStatus(task.status)} | Приоритет: ${formatPriority(task.priority)} | Тип: ${formatTaskType(task.type)} | Исполнитель: ${task.assignee ? task.assignee.name : "-"} | Затраченное время: ${formatSpentSummary(task)}${estimateText}`;
     els.taskDetailsDescription.textContent = task.description || "Без описания";
     await loadTaskCommentsForModal(taskId);
   } catch (error) {
@@ -531,7 +591,7 @@ function renderDeveloperWorkloadList(tasks) {
 
     const meta = document.createElement("div");
     meta.className = "tiny muted";
-    meta.textContent = `Статус: ${task.status} | Приоритет: ${task.priority} | Тип: ${task.type}`;
+    meta.textContent = `Статус: ${formatTaskStatus(task.status)} | Приоритет: ${formatPriority(task.priority)} | Тип: ${formatTaskType(task.type)}`;
 
     const sprint = document.createElement("div");
     sprint.className = "tiny muted";
@@ -567,7 +627,7 @@ async function openDeveloperWorkloadModal(user) {
     const reviewCount = takenTasks.filter((task) => task.status === "ready_for_acceptance").length;
 
     els.developerWorkloadSummary.textContent =
-      `Взято задач: ${takenTasks.length} (selected: ${selectedCount}, in_progress: ${inProgressCount}, ready_for_acceptance: ${reviewCount})`;
+      `Взято задач: ${takenTasks.length} (${formatTaskStatus("selected")}: ${selectedCount}, ${formatTaskStatus("in_progress")}: ${inProgressCount}, ${formatTaskStatus("ready_for_acceptance")}: ${reviewCount})`;
     renderDeveloperWorkloadList(takenTasks);
   } catch (error) {
     els.developerWorkloadSummary.textContent = "Не удалось загрузить загруженность";
@@ -593,7 +653,7 @@ function renderUserManagement() {
   for (const user of state.users) {
     const node = document.createElement("div");
     node.className = "member-item";
-    node.innerHTML = `<strong>${user.name}</strong><div class="tiny muted">${user.login} | ${user.role}</div>`;
+    node.innerHTML = `<strong>${user.name}</strong><div class="tiny muted">${user.login} | ${formatRole(user.role)}</div>`;
     els.userManagementList.appendChild(node);
   }
 }
@@ -619,7 +679,7 @@ function renderMemberBlock() {
       node.className = `member-item${isDeveloperMember ? " member-item-clickable" : ""}`;
       if (isDeveloperMember) {
         const title = document.createElement("div");
-        title.textContent = `${member.user.name} (${member.user.role})`;
+        title.textContent = `${member.user.name} (${formatRole(member.user.role)})`;
         const hint = document.createElement("div");
         hint.className = "tiny muted";
         hint.textContent = "Нажми, чтобы посмотреть загруженность";
@@ -629,7 +689,7 @@ function renderMemberBlock() {
           await openDeveloperWorkloadModal(member.user);
         });
       } else {
-        node.textContent = `${member.user.name} (${member.user.role})`;
+        node.textContent = `${member.user.name} (${formatRole(member.user.role)})`;
       }
       els.memberList.appendChild(node);
     }
@@ -640,7 +700,9 @@ function renderMemberBlock() {
     (item) => (item.role === "developer" || item.role === "admin") && !memberIds.has(item.id),
   );
   els.memberUserSelect.innerHTML = "";
-  els.memberUserSelect.appendChild(optionList(candidates, (u) => u.id, (u) => `${u.name} (${u.role})`, true, "-- выбрать --"));
+  els.memberUserSelect.appendChild(
+    optionList(candidates, (u) => u.id, (u) => `${u.name} (${formatRole(u.role)})`, true, "-- выбрать --"),
+  );
 }
 
 function renderSprintBlock() {
@@ -656,7 +718,7 @@ function renderSprintBlock() {
     for (const sprint of state.sprints) {
       const node = document.createElement("div");
       node.className = "sprint-item";
-      node.innerHTML = `<strong>${sprint.name}</strong><div class="tiny muted">${sprint.status} | ${sprint.start_date} -> ${sprint.end_date}</div><div class="tiny">${sprint.goal || "без цели"}</div>`;
+      node.innerHTML = `<strong>${sprint.name}</strong><div class="tiny muted">${formatSprintStatus(sprint.status)} | ${sprint.start_date} -> ${sprint.end_date}</div><div class="tiny">${sprint.goal || "без цели"}</div>`;
       els.sprintList.appendChild(node);
     }
   }
@@ -666,7 +728,7 @@ function renderDashboard() {
   els.dashboardSummary.innerHTML = "";
 
   if (!state.selectedProjectId) {
-    els.dashboardSummary.innerHTML = '<div class="muted">Выбери проект, чтобы увидеть summary</div>';
+    els.dashboardSummary.innerHTML = '<div class="muted">Выбери проект, чтобы увидеть сводку</div>';
     return;
   }
 
@@ -677,28 +739,34 @@ function renderDashboard() {
 
   const total = document.createElement("div");
   total.className = "metric";
-  total.innerHTML = `<h3>Total tasks</h3><strong>${state.dashboard.total_tasks}</strong>`;
+  total.innerHTML = `<h3>Всего задач</h3><strong>${state.dashboard.total_tasks}</strong>`;
   els.dashboardSummary.appendChild(total);
 
   const statusBox = document.createElement("div");
   statusBox.className = "metric";
-  statusBox.innerHTML = `<h3>By status</h3>${Object.entries(state.dashboard.by_status)
-    .map(([key, value]) => `<div>${key}: <strong>${value}</strong></div>`)
-    .join("") || "<div>empty</div>"}`;
+  statusBox.innerHTML = `<h3>По статусам</h3>${Object.entries(state.dashboard.by_status)
+    .map(([key, value]) => `<div>${formatTaskStatus(key)}: <strong>${value}</strong></div>`)
+    .join("") || "<div>пусто</div>"}`;
   els.dashboardSummary.appendChild(statusBox);
 
   const typeBox = document.createElement("div");
   typeBox.className = "metric";
-  typeBox.innerHTML = `<h3>By type</h3>${Object.entries(state.dashboard.by_type)
-    .map(([key, value]) => `<div>${key}: <strong>${value}</strong></div>`)
-    .join("") || "<div>empty</div>"}`;
+  typeBox.innerHTML = `<h3>По типам</h3>${Object.entries(state.dashboard.by_type)
+    .map(([key, value]) => `<div>${formatTaskType(key)}: <strong>${value}</strong></div>`)
+    .join("") || "<div>пусто</div>"}`;
   els.dashboardSummary.appendChild(typeBox);
 }
 
 function renderTaskSelectors() {
   const projectSelected = Boolean(state.selectedProjectId);
 
-  const sprintOptions = optionList(state.sprints, (s) => s.id, (s) => `${s.name} (${s.status})`, true, "без спринта");
+  const sprintOptions = optionList(
+    state.sprints,
+    (s) => s.id,
+    (s) => `${s.name} (${formatSprintStatus(s.status)})`,
+    true,
+    "без спринта",
+  );
   els.taskSprintSelect.innerHTML = "";
   els.taskSprintSelect.appendChild(sprintOptions);
 
@@ -707,10 +775,10 @@ function renderTaskSelectors() {
   els.taskAssigneeSelect.appendChild(optionList(developers, (u) => u.id, (u) => u.name, true, "без исполнителя"));
 
   els.sprintFilter.innerHTML = "";
-  els.sprintFilter.appendChild(optionList(state.sprints, (s) => s.id, (s) => s.name, true, "all"));
+  els.sprintFilter.appendChild(optionList(state.sprints, (s) => s.id, (s) => s.name, true, "Все"));
 
   els.assigneeFilter.innerHTML = "";
-  els.assigneeFilter.appendChild(optionList(developers, (u) => u.id, (u) => u.name, true, "all"));
+  els.assigneeFilter.appendChild(optionList(developers, (u) => u.id, (u) => u.name, true, "Все"));
 
   if (!projectSelected) {
     els.taskCreateForm.querySelectorAll("input, textarea, select, button").forEach((item) => {
@@ -797,12 +865,12 @@ function formatDuration(seconds) {
   const secs = safeSeconds % 60;
 
   if (hours > 0) {
-    return `${hours}h ${minutes}m`;
+    return `${hours} ч ${minutes} мин`;
   }
   if (minutes > 0) {
-    return `${minutes}m ${secs}s`;
+    return `${minutes} мин ${secs} с`;
   }
-  return `${secs}s`;
+  return `${secs} с`;
 }
 
 function parseUtcLikeDateToMillis(value) {
@@ -839,11 +907,11 @@ function getLiveTrackedSeconds(task) {
 function formatSpentSummary(task) {
   const trackedText = formatDuration(getLiveTrackedSeconds(task));
   if (task.reported_seconds == null) {
-    return `auto: ${trackedText} | manual: -`;
+    return `авто: ${trackedText} | вручную: -`;
   }
 
   const comment = task.reported_comment ? ` (${task.reported_comment})` : "";
-  return `auto: ${trackedText} | manual: ${formatDuration(task.reported_seconds)}${comment}`;
+  return `авто: ${trackedText} | вручную: ${formatDuration(task.reported_seconds)}${comment}`;
 }
 
 function getManualTimeMinutes() {
@@ -865,7 +933,7 @@ function updateManualTimeSummary() {
   }
 
   els.manualTimeSummary.textContent =
-    `Выбрано вручную: ${days}d ${hours}h ${minutes}m (${totalMinutes} мин)`;
+    `Выбрано вручную: ${days} д ${hours} ч ${minutes} мин (${totalMinutes} мин)`;
 }
 
 function closeManualTimeModal(result = null) {
@@ -975,7 +1043,7 @@ function createHistoryControls(task) {
       for (const item of history) {
         const line = document.createElement("div");
         line.className = "history-item";
-        const actorName = item.actor ? item.actor.name : "system";
+        const actorName = item.actor ? item.actor.name : "система";
         const time = new Date(item.created_at).toLocaleString();
         line.textContent = `${time} | ${actorName} | ${item.action} | ${item.details}`;
         historyBox.appendChild(line);
@@ -991,7 +1059,7 @@ function createHistoryControls(task) {
 function renderArchiveTaskList(tasks) {
   for (const task of tasks) {
     const estimate = state.taskEstimatesById[task.id];
-    const estimateLine = isManagerLike() ? `<div>ML ETA: ${estimate ? estimate.label : "-"}</div>` : "";
+    const estimateLine = isManagerLike() ? `<div>Оценка ML: ${estimate ? estimate.label : "-"}</div>` : "";
     const card = document.createElement("article");
     card.className = "task-card";
     bindTaskOpenHandler(card, task.id);
@@ -999,16 +1067,16 @@ function renderArchiveTaskList(tasks) {
       <div class="task-head">
         <h3>${task.title}</h3>
         <div class="badges">
-          <span class="badge status-${task.status}">${task.status}</span>
-          <span class="badge">${task.type}</span>
-          <span class="badge">${task.priority}</span>
+          <span class="badge status-${task.status}">${formatTaskStatus(task.status)}</span>
+          <span class="badge">${formatTaskType(task.type)}</span>
+          <span class="badge">${formatPriority(task.priority)}</span>
         </div>
       </div>
       <div class="task-meta">
-        <div>Creator: ${task.creator.name}</div>
-        <div>Assignee: ${task.assignee ? task.assignee.name : "-"}</div>
-        <div>Sprint: ${task.sprint ? task.sprint.name : "-"}</div>
-        <div>Spent: ${formatSpentSummary(task)}</div>
+        <div>Автор: ${task.creator.name}</div>
+        <div>Исполнитель: ${task.assignee ? task.assignee.name : "-"}</div>
+        <div>Спринт: ${task.sprint ? task.sprint.name : "-"}</div>
+        <div>Затраченное время: ${formatSpentSummary(task)}</div>
         ${estimateLine}
         <div>Архивировано: ${new Date(task.archived_at).toLocaleString()}${task.archived_by ? ` (${task.archived_by.name})` : ""}</div>
         <div>${task.description || "Без описания"}</div>
@@ -1065,7 +1133,7 @@ function createBoardTaskCard(task, developers) {
   dragHandle.type = "button";
   dragHandle.className = "board-drag-handle secondary";
   const canDrag = getAllowedStatusOptions(task).some((statusValue) => statusValue !== task.status);
-  dragHandle.textContent = canDrag ? "DRAG" : "LOCK";
+  dragHandle.textContent = canDrag ? "ПЕРЕТАЩИТЬ" : "БЛОК";
   dragHandle.draggable = canDrag;
   dragHandle.title = canDrag ? "Перетащи карточку в другую колонку" : "Для этой задачи переходы недоступны";
 
@@ -1088,22 +1156,22 @@ function createBoardTaskCard(task, developers) {
   top.appendChild(dragHandle);
 
   const estimate = state.taskEstimatesById[task.id];
-  const estimateLine = isManagerLike() ? `<div>ML ETA: ${estimate ? estimate.label : "-"}</div>` : "";
+  const estimateLine = isManagerLike() ? `<div>Оценка ML: ${estimate ? estimate.label : "-"}</div>` : "";
   const meta = document.createElement("div");
   meta.className = "board-task-meta";
   meta.innerHTML = `
-    <div>#${task.id} • ${task.type}</div>
-    <div>Assignee: ${task.assignee ? task.assignee.name : "-"}</div>
-    <div>Sprint: ${task.sprint ? task.sprint.name : "-"}</div>
-    <div>Spent: ${formatSpentSummary(task)}</div>
+    <div>#${task.id} • ${formatTaskType(task.type)}</div>
+    <div>Исполнитель: ${task.assignee ? task.assignee.name : "-"}</div>
+    <div>Спринт: ${task.sprint ? task.sprint.name : "-"}</div>
+    <div>Затраченное время: ${formatSpentSummary(task)}</div>
     ${estimateLine}
   `;
 
   const badges = document.createElement("div");
   badges.className = "badges";
   badges.innerHTML = `
-    <span class="badge status-${task.status}">${task.status}</span>
-    <span class="badge">${task.priority}</span>
+    <span class="badge status-${task.status}">${formatTaskStatus(task.status)}</span>
+    <span class="badge">${formatPriority(task.priority)}</span>
   `;
 
   const actions = document.createElement("div");
@@ -1504,7 +1572,7 @@ els.duplicateReviewViewBtn.addEventListener("click", async () => {
     const task = await api(`/tasks/${state.duplicateReview.taskId}`);
     els.duplicateReviewDetails.innerHTML = `
       <div><strong>#${task.id} ${task.title}</strong></div>
-      <div class="muted">Тип: ${task.type}, Приоритет: ${task.priority}, Статус: ${task.status}</div>
+      <div class="muted">Тип: ${formatTaskType(task.type)}, Приоритет: ${formatPriority(task.priority)}, Статус: ${formatTaskStatus(task.status)}</div>
       <div>${task.description || "Без описания"}</div>
     `;
     els.duplicateReviewDetails.classList.remove("hidden");
