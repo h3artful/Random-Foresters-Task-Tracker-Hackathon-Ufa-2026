@@ -195,17 +195,39 @@ button:disabled {
 
 .project-item {
   cursor: pointer;
-  transition: transform 0.12s ease, border-color 0.12s ease;
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+  color: var(--text);
+  text-align: left;
+  background: #fbfdff;
 }
 
 .project-item:hover {
   transform: translateY(-1px);
-  border-color: #b9ccff;
+  border-color: #1847bb;
+  background: #1847bb;
+  color: #ffffff;
 }
 
 .project-item.active {
-  border-color: #6692ff;
-  background: #edf3ff;
+  border-color: #1d4fc6;
+  background: #1d4fc6;
+  color: #ffffff;
+}
+
+.project-item.active .tiny {
+  color: #dbe5ff;
+}
+
+.project-item strong {
+  color: inherit;
+}
+
+.project-item .tiny {
+  color: #3f527e;
+}
+
+.project-item:hover .tiny {
+  color: #dbe5ff;
 }
 
 .muted {

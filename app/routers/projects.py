@@ -69,7 +69,9 @@ def add_project_member(
     _: User = Depends(require_roles(UserRole.manager)),
 ) -> ProjectMember:
     _ = get_project_or_404(db, project_id)
-    _ = get_user_or_404(db, payload.user_id)
+    user = get_user_or_404(db, payload.user_id)
+    if user.role != UserRole.developer:
+        raise HTTPException(status_code=400, detail="Only developer can be assigned to a project")
 
     member = ProjectMember(project_id=project_id, user_id=payload.user_id)
     db.add(member)

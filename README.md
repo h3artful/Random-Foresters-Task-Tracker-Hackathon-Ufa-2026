@@ -27,7 +27,12 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 make seed
-uvicorn app.main:app --reload
+make dev
+```
+
+Optional hot reload mode:
+```bash
+make dev-reload
 ```
 
 Open:

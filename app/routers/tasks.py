@@ -60,6 +60,8 @@ def create_task(
         assignee = get_user_or_404(db, payload.assignee_id)
         if assignee.role != UserRole.developer:
             raise HTTPException(status_code=400, detail="Task assignee must be a developer")
+        if not is_project_member(db, project_id, assignee.id):
+            raise HTTPException(status_code=400, detail="Task assignee must be a member of this project")
 
     if payload.sprint_id is not None:
         sprint = get_sprint_or_404(db, payload.sprint_id)
@@ -140,6 +142,8 @@ def assign_task(
 
     if assignee.role != UserRole.developer:
         raise HTTPException(status_code=400, detail="Task assignee must be a developer")
+    if not is_project_member(db, task.project_id, assignee.id):
+        raise HTTPException(status_code=400, detail="Task assignee must be a member of this project")
     if task.status == TaskStatus.closed:
         raise HTTPException(status_code=400, detail="Closed task cannot be reassigned")
 

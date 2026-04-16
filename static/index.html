@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Task Tracker MVP</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260416-2" />
   </head>
   <body>
     <header class="topbar">
@@ -48,8 +48,15 @@
             Пароль
             <input name="password" type="password" minlength="8" required />
           </label>
+          <label>
+            Роль
+            <select name="role">
+              <option value="developer" selected>developer</option>
+              <option value="manager">manager</option>
+            </select>
+          </label>
           <button type="submit">Создать аккаунт</button>
-          <p class="muted tiny">Первый пользователь получает роль manager, остальные developer.</p>
+          <p class="muted tiny">Можно выбрать роль при регистрации.</p>
         </form>
       </section>
 
@@ -231,6 +238,6 @@
 
     <div id="globalMessage" class="toast hidden"></div>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20260416-2"></script>
   </body>
 </html>

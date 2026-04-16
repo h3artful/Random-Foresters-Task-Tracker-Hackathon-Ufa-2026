@@ -17,7 +17,10 @@ def register(payload: UserRegister, db: Session = Depends(get_db)) -> User:
         raise HTTPException(status_code=400, detail="A user with this email already exists")
 
     user_count = db.query(User).count()
-    role = UserRole.manager if user_count == 0 else UserRole.developer
+    if payload.role is not None:
+        role = payload.role
+    else:
+        role = UserRole.manager if user_count == 0 else UserRole.developer
 
     user = User(
         name=payload.name,

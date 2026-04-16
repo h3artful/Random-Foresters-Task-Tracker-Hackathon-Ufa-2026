@@ -64,6 +64,18 @@ def test_auth_and_roles(client: TestClient) -> None:
     assert manager["role"] == "manager"
     assert developer["role"] == "developer"
 
+    explicit_role_payload = client.post(
+        "/api/auth/register",
+        json={
+            "name": "Role Selected Manager",
+            "email": f"selected-manager-{suffix}@example.com",
+            "password": "pass-12345",
+            "role": "manager",
+        },
+    )
+    assert explicit_role_payload.status_code == 201
+    assert explicit_role_payload.json()["role"] == "manager"
+
     # Swagger OAuth2 password flow sends form fields: username/password.
     oauth_form_login = client.post(
         "/api/auth/login",
@@ -185,7 +197,7 @@ def test_access_and_filters(client: TestClient) -> None:
 
     manager = register_user(client, "Lead", manager_email)
     dev_a = register_user(client, "Dev A", dev_a_email)
-    _ = register_user(client, "Dev B", dev_b_email)
+    dev_b = register_user(client, "Dev B", dev_b_email)
 
     manager_headers = login_headers(client, manager_email)
     dev_a_headers = login_headers(client, dev_a_email)
@@ -205,6 +217,14 @@ def test_access_and_filters(client: TestClient) -> None:
     )
     assert add_member.status_code == 201
 
+    # Only developers can be assigned to projects.
+    manager_to_project = client.post(
+        f"/api/projects/{project_id}/members",
+        json={"user_id": manager["id"]},
+        headers=manager_headers,
+    )
+    assert manager_to_project.status_code == 400
+
     create_bug = client.post(
         f"/api/projects/{project_id}/tasks",
         json={
@@ -217,6 +237,20 @@ def test_access_and_filters(client: TestClient) -> None:
         headers=manager_headers,
     )
     assert create_bug.status_code == 201
+
+    # Task assignee must be a member of the same project.
+    create_for_outsider = client.post(
+        f"/api/projects/{project_id}/tasks",
+        json={
+            "title": "Outsider assignment",
+            "description": "should fail",
+            "type": "feature",
+            "priority": "low",
+            "assignee_id": dev_b["id"],
+        },
+        headers=manager_headers,
+    )
+    assert create_for_outsider.status_code == 400
 
     list_filtered = client.get(
         f"/api/tasks?project_id={project_id}&type=bug&priority=medium",

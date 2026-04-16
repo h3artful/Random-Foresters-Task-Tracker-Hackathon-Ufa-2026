@@ -1,7 +1,10 @@
-.PHONY: dev test seed
+.PHONY: dev dev-reload test seed
 
 dev:
-	uvicorn app.main:app --reload
+	uvicorn app.main:app
+
+dev-reload:
+	WATCHFILES_FORCE_POLLING=true uvicorn app.main:app --reload
 
 test:
 	python3 -m pytest -q

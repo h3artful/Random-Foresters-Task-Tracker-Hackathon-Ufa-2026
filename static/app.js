@@ -67,6 +67,12 @@ function getDevelopers() {
   return state.users.filter((item) => item.role === "developer");
 }
 
+function getProjectDevelopers() {
+  const selectedProject = currentProject();
+  if (!selectedProject) return [];
+  return state.members.map((item) => item.user).filter((item) => item.role === "developer");
+}
+
 function showMessage(text, type = "info") {
   const node = els.globalMessage;
   node.textContent = text;
@@ -296,7 +302,7 @@ function renderMemberBlock() {
   }
 
   const memberIds = new Set(state.members.map((item) => item.user.id));
-  const candidates = state.users.filter((item) => !memberIds.has(item.id));
+  const candidates = state.users.filter((item) => item.role === "developer" && !memberIds.has(item.id));
   els.memberUserSelect.innerHTML = "";
   els.memberUserSelect.appendChild(optionList(candidates, (u) => u.id, (u) => `${u.name} (${u.role})`, true, "-- выбрать --"));
 }
@@ -360,7 +366,7 @@ function renderTaskSelectors() {
   els.taskSprintSelect.innerHTML = "";
   els.taskSprintSelect.appendChild(sprintOptions);
 
-  const developers = getDevelopers();
+  const developers = getProjectDevelopers();
   els.taskAssigneeSelect.innerHTML = "";
   els.taskAssigneeSelect.appendChild(optionList(developers, (u) => u.id, (u) => u.name, true, "без исполнителя"));
 
@@ -445,7 +451,7 @@ function renderTaskList() {
     return;
   }
 
-  const developers = getDevelopers();
+  const developers = getProjectDevelopers();
 
   for (const task of state.tasks) {
     const card = document.createElement("article");
@@ -625,10 +631,11 @@ els.registerForm.addEventListener("submit", async (event) => {
         name: String(formData.get("name") || ""),
         email: String(formData.get("email") || ""),
         password: String(formData.get("password") || ""),
+        role: String(formData.get("role") || "developer"),
       },
     });
     els.registerForm.reset();
-    showMessage(`Пользователь ${response.name} создан`, "success");
+    showMessage(`Пользователь ${response.name} создан с ролью ${response.role}`, "success");
   } catch (error) {
     showMessage(error.message, "error");
   }
