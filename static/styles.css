@@ -452,6 +452,11 @@ button:disabled {
   transform: translateY(-1px);
 }
 
+.board-task-card.board-task-assigned-to-me {
+  border-color: #1f7a3a;
+  box-shadow: 0 0 0 1px rgba(31, 122, 58, 0.28), 0 10px 24px rgba(31, 122, 58, 0.14);
+}
+
 .board-task-card.is-dragging {
   opacity: 0.55;
   transform: rotate(1deg);
@@ -547,6 +552,11 @@ button:disabled {
   display: grid;
   gap: 10px;
   background: #ffffff;
+}
+
+.task-card.task-assigned-to-me {
+  border-color: #1f7a3a;
+  box-shadow: 0 0 0 1px rgba(31, 122, 58, 0.28), 0 8px 20px rgba(31, 122, 58, 0.12);
 }
 
 .task-card-clickable {

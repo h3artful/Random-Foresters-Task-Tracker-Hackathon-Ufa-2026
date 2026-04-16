@@ -180,8 +180,16 @@ function isAdmin() {
   return state.currentUser?.role === "admin";
 }
 
+function isDeveloper() {
+  return state.currentUser?.role === "developer";
+}
+
 function isManagerLike() {
   return isManager() || isAdmin();
+}
+
+function isTaskAssignedToCurrentUser(task) {
+  return Boolean(state.currentUser && task.assignee_id && task.assignee_id === state.currentUser.id);
 }
 
 function currentProject() {
@@ -331,6 +339,9 @@ function renderAuthState() {
   document.querySelectorAll(".manager-only").forEach((item) => {
     item.classList.toggle("hidden", !loggedIn || !isManagerLike());
   });
+  document.querySelectorAll(".developer-only").forEach((item) => {
+    item.classList.toggle("hidden", !loggedIn || !isDeveloper());
+  });
 }
 
 async function loadUsers() {
@@ -374,7 +385,7 @@ async function loadProjectContext() {
 }
 
 async function loadDeveloperDashboard() {
-  if (!state.currentUser) {
+  if (!state.currentUser || !isDeveloper()) {
     state.developerDashboard = null;
     return;
   }
@@ -659,6 +670,11 @@ function renderDeveloperWorkloadList(tasks) {
 }
 
 async function openDeveloperWorkloadModal(user) {
+  if (!isManagerLike()) {
+    showMessage("Просмотр загруженности разработчиков доступен только manager/admin", "error");
+    return;
+  }
+
   els.developerWorkloadTitle.textContent = `Загруженность: ${user.name}`;
   els.developerWorkloadSummary.textContent = "Загрузка...";
   els.developerWorkloadList.innerHTML = "";
@@ -758,11 +774,13 @@ function renderMemberBlock() {
   if (!state.members.length) {
     els.memberList.innerHTML = '<div class="muted">В проекте пока нет участников</div>';
   } else {
+    const canInspectDeveloperWorkload = isManagerLike();
     for (const member of state.members) {
       const node = document.createElement("div");
       const isDeveloperMember = member.user.role === "developer";
-      node.className = `member-item${isDeveloperMember ? " member-item-clickable" : ""}`;
-      if (isDeveloperMember) {
+      const isClickableDeveloper = isDeveloperMember && canInspectDeveloperWorkload;
+      node.className = `member-item${isClickableDeveloper ? " member-item-clickable" : ""}`;
+      if (isClickableDeveloper) {
         const title = document.createElement("div");
         title.textContent = `${member.user.name} (${formatRole(member.user.role)})`;
         const hint = document.createElement("div");
@@ -1331,6 +1349,9 @@ function renderArchiveTaskList(tasks) {
     const estimateLine = isManagerLike() ? `<div>Оценка ML: ${formatMlEstimate(estimate)}</div>` : "";
     const card = document.createElement("article");
     card.className = "task-card";
+    if (isTaskAssignedToCurrentUser(task)) {
+      card.classList.add("task-assigned-to-me");
+    }
     bindTaskOpenHandler(card, task.id);
     card.innerHTML = `
       <div class="task-head">
@@ -1388,6 +1409,9 @@ function renderArchiveTaskList(tasks) {
 function createBoardTaskCard(task, developers) {
   const card = document.createElement("article");
   card.className = "board-task-card";
+  if (isTaskAssignedToCurrentUser(task)) {
+    card.classList.add("board-task-assigned-to-me");
+  }
   card.dataset.taskId = String(task.id);
   bindTaskOpenHandler(card, task.id);
 
