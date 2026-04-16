@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..database import get_db
 from ..dependencies import get_project_or_404, get_sprint_or_404, get_task_or_404, get_user_or_404, is_project_member
-from ..models import AuditLog, ProjectMember, Task, TaskPriority, TaskStatus, TaskType, User, UserRole
+from ..models import AuditLog, ProjectMember, Task, TaskPriority, TaskStatus, TaskType, User, UserRole, utcnow_naive
 from ..schemas import AuditLogRead, DashboardSummary, TaskAssign, TaskCreate, TaskRead, TaskStatusUpdate
 from ..security import get_current_user, require_roles
 
@@ -79,6 +79,7 @@ def _task_query(db: Session):
     return db.query(Task).options(
         joinedload(Task.creator),
         joinedload(Task.assignee),
+        joinedload(Task.archived_by),
         joinedload(Task.sprint),
     )
 
@@ -300,6 +301,7 @@ def list_tasks(
     priority: TaskPriority | None = Query(default=None),
     assignee_id: int | None = Query(default=None),
     search: str | None = Query(default=None, min_length=2),
+    archived: bool = Query(default=False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[TaskRead]:
@@ -309,6 +311,10 @@ def list_tasks(
         query = query.join(ProjectMember, ProjectMember.project_id == Task.project_id).filter(
             ProjectMember.user_id == current_user.id
         )
+    if archived:
+        query = query.filter(Task.archived_at.is_not(None))
+    else:
+        query = query.filter(Task.archived_at.is_(None))
 
     if project_id is not None:
         query = query.filter(Task.project_id == project_id)
@@ -415,6 +421,28 @@ def update_task_status(
     return _task_query(db).filter(Task.id == task.id).first()
 
 
+@router.post("/tasks/{task_id}/archive", response_model=TaskRead)
+def archive_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.manager)),
+) -> TaskRead:
+    task = get_task_or_404(db, task_id)
+
+    if task.status != TaskStatus.closed:
+        raise HTTPException(status_code=400, detail="Only closed task can be archived")
+
+    if task.archived_at is not None:
+        return _task_query(db).filter(Task.id == task.id).first()
+
+    task.archived_at = utcnow_naive()
+    task.archived_by_id = current_user.id
+    _audit(db, task.id, current_user.id, "task_archived", "Task moved to archive")
+
+    db.commit()
+    return _task_query(db).filter(Task.id == task.id).first()
+
+
 @router.get("/tasks/{task_id}/history", response_model=list[AuditLogRead])
 def get_task_history(
     task_id: int,
@@ -439,7 +467,7 @@ def dashboard_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DashboardSummary:
-    query = db.query(Task)
+    query = db.query(Task).filter(Task.archived_at.is_(None))
     if project_id is not None:
         query = query.filter(Task.project_id == project_id)
 

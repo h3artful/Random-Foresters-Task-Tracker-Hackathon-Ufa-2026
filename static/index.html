@@ -233,7 +233,14 @@
           </section>
 
           <section class="card">
-            <h2>Задачи</h2>
+            <div class="task-tabs" role="tablist" aria-label="Task views">
+              <button id="taskTabActive" class="secondary active" type="button" role="tab" aria-selected="true">
+                Задачи
+              </button>
+              <button id="taskTabArchive" class="secondary" type="button" role="tab" aria-selected="false">
+                Архив
+              </button>
+            </div>
             <div id="taskList" class="task-grid"></div>
           </section>
         </section>
@@ -255,6 +262,6 @@
 
     <div id="globalMessage" class="toast hidden"></div>
 
-    <script src="/static/app.js?v=20260416-4"></script>
+    <script src="/static/app.js?v=20260416-5"></script>
   </body>
 </html>

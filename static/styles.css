@@ -262,6 +262,21 @@ button:disabled {
   gap: 10px;
 }
 
+.task-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.task-tabs button.active {
+  background: #1d4fc6;
+  color: #ffffff;
+}
+
+.task-tabs button.active:hover {
+  background: #1847bb;
+}
+
 .task-card {
   border: 1px solid var(--line);
   border-radius: 12px;

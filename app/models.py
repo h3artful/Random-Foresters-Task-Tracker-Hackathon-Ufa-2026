@@ -125,6 +125,8 @@ class Task(Base):
     status: Mapped[TaskStatus] = mapped_column(SqlEnum(TaskStatus), default=TaskStatus.open, nullable=False)
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     assignee_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    archived_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
@@ -137,6 +139,7 @@ class Task(Base):
     sprint: Mapped[Sprint | None] = relationship("Sprint", back_populates="tasks")
     creator: Mapped[User] = relationship("User", foreign_keys=[created_by_id])
     assignee: Mapped[User | None] = relationship("User", foreign_keys=[assignee_id])
+    archived_by: Mapped[User | None] = relationship("User", foreign_keys=[archived_by_id])
 
 
 class AuditLog(Base):

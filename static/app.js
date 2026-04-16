@@ -10,6 +10,7 @@ const state = {
   members: [],
   sprints: [],
   tasks: [],
+  activeTaskTab: "tasks",
   taskTitleSearch: "",
   dashboard: null,
   historyByTask: {},
@@ -43,6 +44,8 @@ const els = {
   sprintFilter: document.getElementById("sprintFilter"),
   taskTitleSearch: document.getElementById("taskTitleSearch"),
   clearFiltersBtn: document.getElementById("clearFiltersBtn"),
+  taskTabActive: document.getElementById("taskTabActive"),
+  taskTabArchive: document.getElementById("taskTabArchive"),
   taskList: document.getElementById("taskList"),
   dashboardSummary: document.getElementById("dashboardSummary"),
   globalMessage: document.getElementById("globalMessage"),
@@ -90,6 +93,10 @@ function showMessage(text, type = "info") {
   showMessage._timer = window.setTimeout(() => {
     node.classList.add("hidden");
   }, 2800);
+}
+
+function isArchiveTab() {
+  return state.activeTaskTab === "archive";
 }
 
 class ApiError extends Error {
@@ -164,6 +171,7 @@ function clearSession() {
   state.members = [];
   state.dashboard = null;
   state.selectedProjectId = null;
+  state.activeTaskTab = "tasks";
   state.taskTitleSearch = "";
   state.historyByTask = {};
   state.duplicateReview = null;
@@ -249,6 +257,7 @@ async function loadTasks() {
       priority: filters.priority,
       assignee_id: filters.assignee_id,
       sprint_id: filters.sprint_id,
+      archived: isArchiveTab(),
     },
   });
 }
@@ -424,6 +433,14 @@ function renderTaskSelectors() {
   }
 }
 
+function renderTaskTabs() {
+  const archiveSelected = isArchiveTab();
+  els.taskTabActive.classList.toggle("active", !archiveSelected);
+  els.taskTabArchive.classList.toggle("active", archiveSelected);
+  els.taskTabActive.setAttribute("aria-selected", String(!archiveSelected));
+  els.taskTabArchive.setAttribute("aria-selected", String(archiveSelected));
+}
+
 function getAllowedStatusOptions(task) {
   const current = task.status;
   const next = NEXT_STATUS[current];
@@ -479,7 +496,9 @@ function renderTaskList() {
   if (!filteredTasks.length) {
     els.taskList.innerHTML = normalizedSearch
       ? '<div class="muted">Поиск по заголовку не дал результатов</div>'
-      : '<div class="muted">Задач не найдено по текущим фильтрам</div>';
+      : isArchiveTab()
+        ? '<div class="muted">В архиве задач по текущим фильтрам нет</div>'
+        : '<div class="muted">Задач не найдено по текущим фильтрам</div>';
     return;
   }
 
@@ -504,10 +523,14 @@ function renderTaskList() {
 
     const meta = document.createElement("div");
     meta.className = "task-meta";
+    const archivedInfo = task.archived_at
+      ? `<div>Архивировано: ${new Date(task.archived_at).toLocaleString()}${task.archived_by ? ` (${task.archived_by.name})` : ""}</div>`
+      : "";
     meta.innerHTML = `
       <div>Creator: ${task.creator.name}</div>
       <div>Assignee: ${task.assignee ? task.assignee.name : "-"}</div>
       <div>Sprint: ${task.sprint ? task.sprint.name : "-"}</div>
+      ${archivedInfo}
       <div>${task.description || "Без описания"}</div>
     `;
 
@@ -555,7 +578,7 @@ function renderTaskList() {
       if (task.assignee_id) {
         assignSelect.value = String(task.assignee_id);
       }
-      assignSelect.disabled = task.status === "closed" || developers.length === 0;
+      assignSelect.disabled = task.status === "closed" || developers.length === 0 || isArchiveTab();
       assignSelect.addEventListener("change", async () => {
         try {
           await api(`/tasks/${task.id}/assign`, {
@@ -572,6 +595,28 @@ function renderTaskList() {
       });
       assignBlock.appendChild(assignSelect);
       actions.appendChild(assignBlock);
+    }
+
+    if (isManager() && !isArchiveTab() && task.status === "closed") {
+      const archiveButton = document.createElement("button");
+      archiveButton.type = "button";
+      archiveButton.className = "secondary";
+      archiveButton.textContent = "В архив";
+      archiveButton.addEventListener("click", async () => {
+        archiveButton.disabled = true;
+        try {
+          await api(`/tasks/${task.id}/archive`, { method: "POST" });
+          showMessage("Задача отправлена в архив", "success");
+          state.historyByTask[task.id] = null;
+          await loadProjectContext();
+          await loadTasks();
+          renderWorkspace();
+        } catch (error) {
+          archiveButton.disabled = false;
+          showMessage(error.message, "error");
+        }
+      });
+      actions.appendChild(archiveButton);
     }
 
     const historyToggle = document.createElement("button");
@@ -628,6 +673,7 @@ function renderWorkspace() {
   renderSprintBlock();
   renderDashboard();
   renderTaskSelectors();
+  renderTaskTabs();
   renderTaskList();
 }
 
@@ -893,6 +939,28 @@ els.clearFiltersBtn.addEventListener("click", async () => {
 els.taskTitleSearch.addEventListener("input", (event) => {
   state.taskTitleSearch = String(event.target.value || "");
   renderTaskList();
+});
+
+els.taskTabActive.addEventListener("click", async () => {
+  if (state.activeTaskTab === "tasks") return;
+  state.activeTaskTab = "tasks";
+  try {
+    await loadTasks();
+    renderWorkspace();
+  } catch (error) {
+    showMessage(error.message, "error");
+  }
+});
+
+els.taskTabArchive.addEventListener("click", async () => {
+  if (state.activeTaskTab === "archive") return;
+  state.activeTaskTab = "archive";
+  try {
+    await loadTasks();
+    renderWorkspace();
+  } catch (error) {
+    showMessage(error.message, "error");
+  }
 });
 
 async function bootstrap() {

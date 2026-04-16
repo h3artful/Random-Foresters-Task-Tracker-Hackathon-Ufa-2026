@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import inspect, text
 
 from .database import Base, engine
 from .routers import auth, projects, sprints, tasks, users
@@ -13,9 +14,26 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
 
 
+def ensure_legacy_schema() -> None:
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "tasks" not in table_names:
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("tasks")}
+    with engine.begin() as connection:
+        if "archived_by_id" not in columns:
+            connection.execute(text("ALTER TABLE tasks ADD COLUMN archived_by_id INTEGER"))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_tasks_archived_by_id ON tasks (archived_by_id)"))
+        if "archived_at" not in columns:
+            connection.execute(text("ALTER TABLE tasks ADD COLUMN archived_at DATETIME"))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_tasks_archived_at ON tasks (archived_at)"))
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
+    ensure_legacy_schema()
     yield
 
 

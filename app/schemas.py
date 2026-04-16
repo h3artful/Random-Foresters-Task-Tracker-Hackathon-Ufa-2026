@@ -128,10 +128,13 @@ class TaskRead(BaseModel):
     status: TaskStatus
     created_by_id: int
     assignee_id: int | None
+    archived_by_id: int | None
+    archived_at: datetime | None
     created_at: datetime
     updated_at: datetime
     creator: UserShort
     assignee: UserShort | None
+    archived_by: UserShort | None
     sprint: SprintShort | None
 
     model_config = ConfigDict(from_attributes=True)

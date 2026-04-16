@@ -281,6 +281,86 @@ def test_access_and_filters(client: TestClient) -> None:
     assert forbidden_project.status_code == 403
 
 
+def test_task_archive_flow_and_visibility(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+
+    manager_email = f"archive-mgr-{suffix}@example.com"
+    developer_email = f"archive-dev-{suffix}@example.com"
+
+    manager = register_user(client, "Archive Manager", manager_email)
+    developer = register_user(client, "Archive Developer", developer_email)
+
+    manager_headers = login_headers(client, manager_email)
+    developer_headers = login_headers(client, developer_email)
+
+    project = client.post(
+        "/api/projects",
+        json={"name": "Archive Project", "description": "archive checks"},
+        headers=manager_headers,
+    )
+    assert project.status_code == 201
+    project_id = project.json()["id"]
+
+    add_member = client.post(
+        f"/api/projects/{project_id}/members",
+        json={"user_id": developer["id"]},
+        headers=manager_headers,
+    )
+    assert add_member.status_code == 201
+
+    create_task = client.post(
+        f"/api/projects/{project_id}/tasks",
+        json={
+            "title": "Archive candidate",
+            "description": "Task to check archive behavior",
+            "type": "feature",
+            "priority": "medium",
+            "assignee_id": developer["id"],
+        },
+        headers=manager_headers,
+    )
+    assert create_task.status_code == 201
+    task_id = create_task.json()["id"]
+
+    archive_not_closed = client.post(f"/api/tasks/{task_id}/archive", headers=manager_headers)
+    assert archive_not_closed.status_code == 400
+
+    selected = client.patch(f"/api/tasks/{task_id}/status", json={"status": "selected"}, headers=developer_headers)
+    in_progress = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"status": "in_progress"},
+        headers=developer_headers,
+    )
+    ready = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"status": "ready_for_acceptance"},
+        headers=developer_headers,
+    )
+    closed = client.patch(f"/api/tasks/{task_id}/status", json={"status": "closed"}, headers=manager_headers)
+    assert selected.status_code == 200
+    assert in_progress.status_code == 200
+    assert ready.status_code == 200
+    assert closed.status_code == 200
+
+    developer_archive = client.post(f"/api/tasks/{task_id}/archive", headers=developer_headers)
+    assert developer_archive.status_code == 403
+
+    manager_archive = client.post(f"/api/tasks/{task_id}/archive", headers=manager_headers)
+    assert manager_archive.status_code == 200
+    archive_payload = manager_archive.json()
+    assert archive_payload["archived_at"] is not None
+    assert archive_payload["archived_by_id"] == manager["id"]
+
+    default_list = client.get(f"/api/tasks?project_id={project_id}", headers=manager_headers)
+    assert default_list.status_code == 200
+    assert default_list.json() == []
+
+    archived_list = client.get(f"/api/tasks?project_id={project_id}&archived=true", headers=manager_headers)
+    assert archived_list.status_code == 200
+    assert len(archived_list.json()) == 1
+    assert archived_list.json()[0]["id"] == task_id
+
+
 def test_task_duplicate_detection_blocks_confident_duplicate(client: TestClient) -> None:
     suffix = uuid4().hex[:8]
     manager_email = f"dup-mgr-{suffix}@example.com"
