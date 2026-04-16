@@ -14,6 +14,7 @@ const state = {
   taskTitleSearch: "",
   dashboard: null,
   historyByTask: {},
+  taskEstimatesById: {},
   duplicateReview: null,
   manualTimeResolver: null,
   dragTaskId: null,
@@ -222,6 +223,7 @@ function clearSession() {
   state.activeTaskTab = "tasks";
   state.taskTitleSearch = "";
   state.historyByTask = {};
+  state.taskEstimatesById = {};
   state.duplicateReview = null;
   state.dragTaskId = null;
   state.taskDetailsTaskId = null;
@@ -317,6 +319,34 @@ async function loadTasks() {
       archived: isArchiveTab(),
     },
   });
+  await loadTaskEstimates();
+}
+
+async function loadTaskEstimates() {
+  state.taskEstimatesById = {};
+  if (!isManagerLike() || !state.selectedProjectId) {
+    return;
+  }
+
+  const filters = readTaskFilters();
+  try {
+    const estimates = await api("/tasks/estimates", {
+      query: {
+        project_id: state.selectedProjectId,
+        status: filters.status,
+        type: filters.type,
+        priority: filters.priority,
+        assignee_id: filters.assignee_id,
+        sprint_id: filters.sprint_id,
+        archived: isArchiveTab(),
+      },
+    });
+    state.taskEstimatesById = Object.fromEntries(
+      estimates.map((item) => [item.task_id, item]),
+    );
+  } catch (_) {
+    state.taskEstimatesById = {};
+  }
 }
 
 async function refreshWorkspace() {
@@ -457,8 +487,25 @@ async function openTaskDetailsModal(taskId) {
       return;
     }
 
+    let estimate = null;
+    if (isManagerLike()) {
+      estimate = state.taskEstimatesById[task.id] || null;
+      if (!estimate) {
+        try {
+          estimate = await api(`/tasks/${task.id}/estimate`);
+          if (estimate) {
+            state.taskEstimatesById[task.id] = estimate;
+          }
+        } catch (_) {
+          estimate = null;
+        }
+      }
+    }
+
+    const estimateText = isManagerLike() ? ` | ML ETA: ${estimate ? estimate.label : "-"}` : "";
     els.taskDetailsTitle.textContent = `#${task.id} ${task.title}`;
-    els.taskDetailsMeta.textContent = `Статус: ${task.status} | Приоритет: ${task.priority} | Тип: ${task.type} | Исполнитель: ${task.assignee ? task.assignee.name : "-"} | Spent: ${formatSpentSummary(task)}`;
+    els.taskDetailsMeta.textContent =
+      `Статус: ${task.status} | Приоритет: ${task.priority} | Тип: ${task.type} | Исполнитель: ${task.assignee ? task.assignee.name : "-"} | Spent: ${formatSpentSummary(task)}${estimateText}`;
     els.taskDetailsDescription.textContent = task.description || "Без описания";
     await loadTaskCommentsForModal(taskId);
   } catch (error) {
@@ -943,6 +990,8 @@ function createHistoryControls(task) {
 
 function renderArchiveTaskList(tasks) {
   for (const task of tasks) {
+    const estimate = state.taskEstimatesById[task.id];
+    const estimateLine = isManagerLike() ? `<div>ML ETA: ${estimate ? estimate.label : "-"}</div>` : "";
     const card = document.createElement("article");
     card.className = "task-card";
     bindTaskOpenHandler(card, task.id);
@@ -960,6 +1009,7 @@ function renderArchiveTaskList(tasks) {
         <div>Assignee: ${task.assignee ? task.assignee.name : "-"}</div>
         <div>Sprint: ${task.sprint ? task.sprint.name : "-"}</div>
         <div>Spent: ${formatSpentSummary(task)}</div>
+        ${estimateLine}
         <div>Архивировано: ${new Date(task.archived_at).toLocaleString()}${task.archived_by ? ` (${task.archived_by.name})` : ""}</div>
         <div>${task.description || "Без описания"}</div>
       </div>
@@ -1037,6 +1087,8 @@ function createBoardTaskCard(task, developers) {
   top.appendChild(title);
   top.appendChild(dragHandle);
 
+  const estimate = state.taskEstimatesById[task.id];
+  const estimateLine = isManagerLike() ? `<div>ML ETA: ${estimate ? estimate.label : "-"}</div>` : "";
   const meta = document.createElement("div");
   meta.className = "board-task-meta";
   meta.innerHTML = `
@@ -1044,6 +1096,7 @@ function createBoardTaskCard(task, developers) {
     <div>Assignee: ${task.assignee ? task.assignee.name : "-"}</div>
     <div>Sprint: ${task.sprint ? task.sprint.name : "-"}</div>
     <div>Spent: ${formatSpentSummary(task)}</div>
+    ${estimateLine}
   `;
 
   const badges = document.createElement("div");
@@ -1277,7 +1330,7 @@ function buildTaskCreatePayload(formData) {
     title: String(formData.get("title") || ""),
     description: String(formData.get("description") || ""),
     type: String(formData.get("type") || "feature"),
-    priority: String(formData.get("priority") || "medium"),
+    priority: String(formData.get("priority") || "Medium"),
     assignee_id: assigneeRaw ? Number(assigneeRaw) : null,
     sprint_id: sprintRaw ? Number(sprintRaw) : null,
   };

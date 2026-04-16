@@ -160,9 +160,14 @@
                 <label>
                   Приоритет
                   <select name="priority">
-                    <option value="low">low</option>
-                    <option value="medium" selected>medium</option>
-                    <option value="high">high</option>
+                    <option value="Trivial">Trivial</option>
+                    <option value="Minor">Minor</option>
+                    <option value="Low">Low</option>
+                    <option value="Medium" selected>Medium</option>
+                    <option value="Major">Major</option>
+                    <option value="High">High</option>
+                    <option value="Critical">Critical</option>
+                    <option value="Blocker">Blocker</option>
                   </select>
                 </label>
               </div>
@@ -216,9 +221,14 @@
                 Приоритет
                 <select id="priorityFilter" name="priority">
                   <option value="">all</option>
-                  <option value="low">low</option>
-                  <option value="medium">medium</option>
-                  <option value="high">high</option>
+                  <option value="Trivial">Trivial</option>
+                  <option value="Minor">Minor</option>
+                  <option value="Low">Low</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Major">Major</option>
+                  <option value="High">High</option>
+                  <option value="Critical">Critical</option>
+                  <option value="Blocker">Blocker</option>
                 </select>
               </label>
               <label>
@@ -330,6 +340,6 @@
 
     <div id="globalMessage" class="toast hidden"></div>
 
-    <script src="/static/app.js?v=20260416-13"></script>
+    <script src="/static/app.js?v=20260416-14"></script>
   </body>
 </html>

@@ -183,3 +183,10 @@ class DashboardSummary(BaseModel):
     total_tasks: int
     by_status: dict[str, int]
     by_type: dict[str, int]
+
+
+class TaskDurationEstimateRead(BaseModel):
+    task_id: int
+    hours: float
+    days: float
+    label: str

@@ -8,8 +8,19 @@ from sqlalchemy.orm import Session, joinedload
 from ..database import get_db
 from ..dependencies import get_project_or_404, get_sprint_or_404, get_task_or_404, get_user_or_404, is_project_member
 from ..models import AuditLog, ProjectMember, Task, TaskComment, TaskPriority, TaskStatus, TaskType, User, UserRole, utcnow_naive
-from ..schemas import AuditLogRead, DashboardSummary, TaskAssign, TaskCommentCreate, TaskCommentRead, TaskCreate, TaskRead, TaskStatusUpdate
+from ..schemas import (
+    AuditLogRead,
+    DashboardSummary,
+    TaskAssign,
+    TaskCommentCreate,
+    TaskCommentRead,
+    TaskCreate,
+    TaskDurationEstimateRead,
+    TaskRead,
+    TaskStatusUpdate,
+)
 from ..security import get_current_user, require_roles
+from ..services.duration_estimator import get_duration_estimator
 
 router = APIRouter(tags=["Tasks"], dependencies=[Depends(get_current_user)])
 
@@ -258,6 +269,75 @@ def _format_similarity_warning(signal: DuplicateSignal) -> str:
     )
 
 
+def _apply_task_filters(
+    query,
+    *,
+    project_id: int | None,
+    sprint_id: int | None,
+    status_filter: TaskStatus | None,
+    type_filter: TaskType | None,
+    priority: TaskPriority | None,
+    assignee_id: int | None,
+    search: str | None,
+    archived: bool,
+):
+    if archived:
+        query = query.filter(Task.archived_at.is_not(None))
+    else:
+        query = query.filter(Task.archived_at.is_(None))
+
+    if project_id is not None:
+        query = query.filter(Task.project_id == project_id)
+    if sprint_id is not None:
+        query = query.filter(Task.sprint_id == sprint_id)
+    if status_filter is not None:
+        query = query.filter(Task.status == status_filter)
+    if type_filter is not None:
+        query = query.filter(Task.type == type_filter)
+    if priority is not None:
+        query = query.filter(Task.priority == priority)
+    if assignee_id is not None:
+        query = query.filter(Task.assignee_id == assignee_id)
+    if search:
+        like_pattern = f"%{search.strip()}%"
+        query = query.filter((Task.title.ilike(like_pattern)) | (Task.description.ilike(like_pattern)))
+
+    return query
+
+
+def _task_to_issue_type(task_type: TaskType) -> str:
+    if task_type == TaskType.bug:
+        return "Bug"
+    return "Suggestion"
+
+
+def _build_prediction_summary(task: Task) -> str:
+    description = (task.description or "").strip()
+    if description:
+        return f"{task.title}. {description}"
+    return task.title
+
+
+def _predict_task_duration(task: Task) -> TaskDurationEstimateRead | None:
+    estimator = get_duration_estimator()
+    prediction = estimator.predict(
+        task_id=task.id,
+        summary=_build_prediction_summary(task),
+        issue_type=_task_to_issue_type(task.type),
+        priority=task.priority.value,
+        created_at=task.created_at,
+    )
+    if prediction is None:
+        return None
+
+    return TaskDurationEstimateRead(
+        task_id=prediction.task_id,
+        hours=prediction.hours,
+        days=prediction.days,
+        label=prediction.label,
+    )
+
+
 @router.post("/projects/{project_id}/tasks", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
 def create_task(
     project_id: int,
@@ -352,28 +432,53 @@ def list_tasks(
         query = query.join(ProjectMember, ProjectMember.project_id == Task.project_id).filter(
             ProjectMember.user_id == current_user.id
         )
-    if archived:
-        query = query.filter(Task.archived_at.is_not(None))
-    else:
-        query = query.filter(Task.archived_at.is_(None))
-
-    if project_id is not None:
-        query = query.filter(Task.project_id == project_id)
-    if sprint_id is not None:
-        query = query.filter(Task.sprint_id == sprint_id)
-    if status_filter is not None:
-        query = query.filter(Task.status == status_filter)
-    if type_filter is not None:
-        query = query.filter(Task.type == type_filter)
-    if priority is not None:
-        query = query.filter(Task.priority == priority)
-    if assignee_id is not None:
-        query = query.filter(Task.assignee_id == assignee_id)
-    if search:
-        like_pattern = f"%{search.strip()}%"
-        query = query.filter((Task.title.ilike(like_pattern)) | (Task.description.ilike(like_pattern)))
+    query = _apply_task_filters(
+        query,
+        project_id=project_id,
+        sprint_id=sprint_id,
+        status_filter=status_filter,
+        type_filter=type_filter,
+        priority=priority,
+        assignee_id=assignee_id,
+        search=search,
+        archived=archived,
+    )
 
     return query.order_by(Task.updated_at.desc()).all()
+
+
+@router.get("/tasks/estimates", response_model=list[TaskDurationEstimateRead])
+def list_task_estimates(
+    project_id: int | None = Query(default=None),
+    sprint_id: int | None = Query(default=None),
+    status_filter: TaskStatus | None = Query(default=None, alias="status"),
+    type_filter: TaskType | None = Query(default=None, alias="type"),
+    priority: TaskPriority | None = Query(default=None),
+    assignee_id: int | None = Query(default=None),
+    search: str | None = Query(default=None, min_length=2),
+    archived: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(require_roles(UserRole.manager)),
+) -> list[TaskDurationEstimateRead]:
+    query = _apply_task_filters(
+        _task_query(db),
+        project_id=project_id,
+        sprint_id=sprint_id,
+        status_filter=status_filter,
+        type_filter=type_filter,
+        priority=priority,
+        assignee_id=assignee_id,
+        search=search,
+        archived=archived,
+    )
+    tasks = query.order_by(Task.updated_at.desc()).all()
+
+    estimates: list[TaskDurationEstimateRead] = []
+    for task in tasks:
+        estimate = _predict_task_duration(task)
+        if estimate is not None:
+            estimates.append(estimate)
+    return estimates
 
 
 @router.get("/tasks/{task_id}", response_model=TaskRead)
@@ -388,6 +493,18 @@ def get_task(
 
     _ensure_task_access(db, task, current_user)
     return task
+
+
+@router.get("/tasks/{task_id}/estimate", response_model=TaskDurationEstimateRead | None)
+def get_task_estimate(
+    task_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(require_roles(UserRole.manager)),
+) -> TaskDurationEstimateRead | None:
+    task = _task_query(db).filter(Task.id == task_id).first()
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return _predict_task_duration(task)
 
 
 @router.patch("/tasks/{task_id}/assign", response_model=TaskRead)

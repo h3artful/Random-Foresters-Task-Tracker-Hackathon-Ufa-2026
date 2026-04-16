@@ -438,6 +438,77 @@ def test_access_and_filters(client: TestClient) -> None:
     assert forbidden_project.status_code == 403
 
 
+def test_task_duration_estimate_endpoints_are_manager_only(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+
+    manager_email = f"ml-mgr-{suffix}@example.com"
+    developer_email = f"ml-dev-{suffix}@example.com"
+
+    manager = register_user(client, "ML Manager", manager_email)
+    developer = register_user(client, "ML Developer", developer_email)
+
+    manager_headers = login_headers(client, manager_email)
+    developer_headers = login_headers(client, developer_email)
+
+    project = client.post(
+        "/api/projects",
+        json={"name": "ML ETA Project", "description": "prediction visibility checks"},
+        headers=manager_headers,
+    )
+    assert project.status_code == 201
+    project_id = project.json()["id"]
+
+    add_member = client.post(
+        f"/api/projects/{project_id}/members",
+        json={"user_id": developer["id"]},
+        headers=manager_headers,
+    )
+    assert add_member.status_code == 201
+
+    create_task = client.post(
+        f"/api/projects/{project_id}/tasks",
+        json={
+            "title": "Fix login timeout in auth flow",
+            "description": "Users receive timeout on slow network",
+            "type": "bug",
+            "priority": "High",
+            "assignee_id": developer["id"],
+        },
+        headers=manager_headers,
+    )
+    assert create_task.status_code == 201
+    task_id = create_task.json()["id"]
+
+    manager_estimates = client.get(
+        f"/api/tasks/estimates?project_id={project_id}",
+        headers=manager_headers,
+    )
+    assert manager_estimates.status_code == 200
+    estimates_payload = manager_estimates.json()
+    if estimates_payload:
+        assert all("task_id" in item and "label" in item for item in estimates_payload)
+        assert any(item["task_id"] == task_id for item in estimates_payload)
+
+    manager_single_estimate = client.get(f"/api/tasks/{task_id}/estimate", headers=manager_headers)
+    assert manager_single_estimate.status_code == 200
+    single_payload = manager_single_estimate.json()
+    if single_payload is not None:
+        assert single_payload["task_id"] == task_id
+        assert "label" in single_payload
+
+    developer_estimates = client.get(
+        f"/api/tasks/estimates?project_id={project_id}",
+        headers=developer_headers,
+    )
+    assert developer_estimates.status_code == 403
+
+    developer_single_estimate = client.get(
+        f"/api/tasks/{task_id}/estimate",
+        headers=developer_headers,
+    )
+    assert developer_single_estimate.status_code == 403
+
+
 def test_task_archive_flow_and_visibility(client: TestClient) -> None:
     suffix = uuid4().hex[:8]
 

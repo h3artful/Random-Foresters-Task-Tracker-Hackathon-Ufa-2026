@@ -3,3 +3,7 @@ uvicorn[standard]>=0.30.0
 sqlalchemy>=2.0.30
 pydantic>=2.7.0
 PyJWT>=2.9.0
+joblib
+numpy
+pandas
+scikit-learn==1.6.1

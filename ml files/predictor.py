@@ -7,6 +7,15 @@ Original file is located at
     https://colab.research.google.com/drive/10QLC5JilIN-vWPcQc1tKgTDx8Y_ljvOO
 """
 
+import datetime
+import json
+from pathlib import Path
+
+import joblib
+import numpy as np
+import pandas as pd
+
+
 class DurationPredictor:
     """
     Предсказывает время выполнения задачи.
@@ -22,80 +31,84 @@ class DurationPredictor:
     """
 
     KEYWORDS_ERROR = ['error', 'fail', 'crash', 'exception', 'broken', 'bug']
-    KEYWORDS_UI    = ['button', 'menu', 'dialog', 'ui', 'display', 'screen', 'popup']
-    KEYWORDS_PERF  = ['slow', 'performance', 'lag', 'timeout', 'hang', 'freeze']
+    KEYWORDS_UI = ['button', 'menu', 'dialog', 'ui', 'display', 'screen', 'popup']
+    KEYWORDS_PERF = ['slow', 'performance', 'lag', 'timeout', 'hang', 'freeze']
 
-    def __init__(self, model_path='duration_model.pkl', meta_path='model_meta.json'):
-        self.model = joblib.load(model_path)
-        with open(meta_path) as f:
+    def __init__(self, model_path=None, meta_path=None):
+        base_dir = Path(__file__).resolve().parent
+        model_file = Path(model_path) if model_path else base_dir / 'duration_model.pkl'
+        meta_file = Path(meta_path) if meta_path else base_dir / 'model_meta.json'
+
+        self.model = joblib.load(model_file)
+        with meta_file.open(encoding='utf-8') as f:
             meta = json.load(f)
-        self.feature_cols   = meta['feature_cols']
-        self.priority_map   = meta['priority_map']
+        self.feature_cols = meta['feature_cols']
+        self.priority_map = meta['priority_map']
         self.priority_median = {float(k): v for k, v in meta['priority_median_dur'].items()}
 
-    def _build_features(self, summary: str, issue_type: str, priority: str,
-                         created_at=None) -> pd.DataFrame:
+    def _build_features(self, summary: str, issue_type: str, priority: str, created_at=None) -> pd.DataFrame:
         if created_at is None:
             created_at = datetime.datetime.now()
 
-        p_ord = self.priority_map.get(priority, 3)          # default Medium
+        safe_summary = summary or ''
+        p_ord = self.priority_map.get(priority, 3)  # default Medium
         p_med = self.priority_median.get(float(p_ord), 631.4)
 
-        h   = created_at.hour
+        h = created_at.hour
         dow = created_at.weekday()
-        s   = summary.lower()
+        s = safe_summary.lower()
 
         feat = {
-            'priority_ord':        p_ord,
+            'priority_ord': p_ord,
             'priority_median_dur': p_med,
-            'hour_sin':            np.sin(2 * np.pi * h / 24),
-            'hour_cos':            np.cos(2 * np.pi * h / 24),
-            'dow_sin':             np.sin(2 * np.pi * dow / 7),
-            'dow_cos':             np.cos(2 * np.pi * dow / 7),
-            'is_weekend':          int(dow >= 5),
-            'is_business_hours':   int(9 <= h <= 18),
-            'summary_len':         len(summary),
-            'summary_word_count':  len(summary.split()),
-            'summary_has_error':   int(any(k in s for k in self.KEYWORDS_ERROR)),
-            'summary_has_ui':      int(any(k in s for k in self.KEYWORDS_UI)),
-            'summary_has_perf':    int(any(k in s for k in self.KEYWORDS_PERF)),
-            'type_Bug':            int(issue_type == 'Bug'),
-            'type_Suggestion':     int(issue_type == 'Suggestion'),
+            'hour_sin': np.sin(2 * np.pi * h / 24),
+            'hour_cos': np.cos(2 * np.pi * h / 24),
+            'dow_sin': np.sin(2 * np.pi * dow / 7),
+            'dow_cos': np.cos(2 * np.pi * dow / 7),
+            'is_weekend': int(dow >= 5),
+            'is_business_hours': int(9 <= h <= 18),
+            'summary_len': len(safe_summary),
+            'summary_word_count': len(safe_summary.split()),
+            'summary_has_error': int(any(k in s for k in self.KEYWORDS_ERROR)),
+            'summary_has_ui': int(any(k in s for k in self.KEYWORDS_UI)),
+            'summary_has_perf': int(any(k in s for k in self.KEYWORDS_PERF)),
+            'type_Bug': int(issue_type == 'Bug'),
+            'type_Suggestion': int(issue_type == 'Suggestion'),
         }
         return pd.DataFrame([feat])[self.feature_cols]
 
-    def predict(self, summary: str, issue_type: str, priority: str,
-                created_at=None) -> dict:
+    def predict(self, summary: str, issue_type: str, priority: str, created_at=None) -> dict:
         X = self._build_features(summary, issue_type, priority, created_at)
         log_pred = self.model.predict(X)[0]
-        hours    = float(np.expm1(log_pred))
-        days     = hours / 24
+        hours = float(np.expm1(log_pred))
+        days = hours / 24
 
         if days < 1:
             label = f'~{hours:.0f} часов'
         elif days < 7:
             label = f'~{days:.1f} дней'
         elif days < 30:
-            label = f'~{days/7:.1f} недель'
+            label = f'~{days / 7:.1f} недель'
         else:
-            label = f'~{days/30:.1f} месяцев'
+            label = f'~{days / 30:.1f} месяцев'
 
         return {'hours': round(hours, 1), 'days': round(days, 1), 'label': label}
 
 
-# ── Smoke-test ────────────────────────────────────────────────────────────────
-predictor = DurationPredictor()
+if __name__ == '__main__':
+    # Smoke-test
+    predictor = DurationPredictor()
 
-test_cases = [
-    ('Button crash on login screen',         'Bug',        'High'),
-    ('Add dark mode to settings',            'Suggestion', 'Low'),
-    ('App freezes when opening large files', 'Bug',        'Critical'),
-    ('Typo in help text',                    'Bug',        'Trivial'),
-    ('Implement OAuth2 login flow',          'Suggestion', 'Medium'),
-]
+    test_cases = [
+        ('Button crash on login screen', 'Bug', 'High'),
+        ('Add dark mode to settings', 'Suggestion', 'Low'),
+        ('App freezes when opening large files', 'Bug', 'Critical'),
+        ('Typo in help text', 'Bug', 'Trivial'),
+        ('Implement OAuth2 login flow', 'Suggestion', 'Medium'),
+    ]
 
-print(f'{"Summary":<45} {"Type":12} {"Priority":9} {"Estimate"}')
-print('-' * 85)
-for summary, itype, priority in test_cases:
-    result = predictor.predict(summary, itype, priority)
-    print(f'{summary:<45} {itype:12} {priority:9} {result["label"]}')
+    print(f'{"Summary":<45} {"Type":12} {"Priority":9} {"Estimate"}')
+    print('-' * 85)
+    for summary, itype, priority in test_cases:
+        result = predictor.predict(summary, itype, priority)
+        print(f'{summary:<45} {itype:12} {priority:9} {result["label"]}')
