@@ -33,9 +33,14 @@ class TaskType(str, Enum):
 
 
 class TaskPriority(str, Enum):
-    low = "low"
-    medium = "medium"
-    high = "high"
+    trivial = "Trivial"
+    minor = "Minor"
+    low = "Low"
+    medium = "Medium"
+    major = "Major"
+    high = "High"
+    critical = "Critical"
+    blocker = "Blocker"
 
 
 class TaskStatus(str, Enum):
@@ -122,7 +127,15 @@ class Task(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     type: Mapped[TaskType] = mapped_column(SqlEnum(TaskType), nullable=False)
-    priority: Mapped[TaskPriority] = mapped_column(SqlEnum(TaskPriority), default=TaskPriority.medium, nullable=False)
+    priority: Mapped[TaskPriority] = mapped_column(
+        SqlEnum(
+            TaskPriority,
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+            native_enum=False,
+        ),
+        default=TaskPriority.medium,
+        nullable=False,
+    )
     status: Mapped[TaskStatus] = mapped_column(SqlEnum(TaskStatus), default=TaskStatus.open, nullable=False)
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     assignee_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)

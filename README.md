@@ -11,7 +11,7 @@ Task management service aligned with hackathon requirements.
   - title
   - description
   - type (`feature`, `bug`, `tech_debt`, `documentation`)
-  - priority (`low`, `medium`, `high`)
+  - priority (`Trivial`, `Minor`, `Low`, `Medium`, `Major`, `High`, `Critical`, `Blocker`)
   - assignee
   - sprint binding
 - Strict status flow:

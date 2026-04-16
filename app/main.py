@@ -28,6 +28,25 @@ def ensure_legacy_schema() -> None:
         if "archived_at" not in columns:
             connection.execute(text("ALTER TABLE tasks ADD COLUMN archived_at DATETIME"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_tasks_archived_at ON tasks (archived_at)"))
+        connection.execute(
+            text(
+                """
+                UPDATE tasks
+                SET priority = CASE lower(priority)
+                    WHEN 'trivial' THEN 'Trivial'
+                    WHEN 'minor' THEN 'Minor'
+                    WHEN 'low' THEN 'Low'
+                    WHEN 'medium' THEN 'Medium'
+                    WHEN 'major' THEN 'Major'
+                    WHEN 'high' THEN 'High'
+                    WHEN 'critical' THEN 'Critical'
+                    WHEN 'blocker' THEN 'Blocker'
+                    ELSE priority
+                END
+                WHERE lower(priority) IN ('trivial', 'minor', 'low', 'medium', 'major', 'high', 'critical', 'blocker')
+                """
+            )
+        )
 
 
 @asynccontextmanager

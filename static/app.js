@@ -747,7 +747,7 @@ function buildTaskCreatePayload(formData) {
     title: String(formData.get("title") || ""),
     description: String(formData.get("description") || ""),
     type: String(formData.get("type") || "feature"),
-    priority: String(formData.get("priority") || "medium"),
+    priority: String(formData.get("priority") || "Medium"),
     assignee_id: assigneeRaw ? Number(assigneeRaw) : null,
     sprint_id: sprintRaw ? Number(sprintRaw) : null,
   };
