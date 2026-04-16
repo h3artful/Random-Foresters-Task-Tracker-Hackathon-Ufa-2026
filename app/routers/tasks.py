@@ -1,4 +1,6 @@
 from collections import Counter
+import re
+from dataclasses import dataclass
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
@@ -11,6 +13,48 @@ from ..security import get_current_user, require_roles
 
 router = APIRouter(tags=["Tasks"], dependencies=[Depends(get_current_user)])
 
+STOP_WORDS = {
+    "a",
+    "an",
+    "and",
+    "at",
+    "by",
+    "for",
+    "from",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "with",
+    "без",
+    "в",
+    "во",
+    "для",
+    "и",
+    "из",
+    "к",
+    "на",
+    "не",
+    "по",
+    "под",
+    "при",
+    "с",
+    "со",
+    "что",
+}
+
+TOKEN_PATTERN = re.compile(r"[a-z0-9а-яё]+", re.IGNORECASE)
+
+TITLE_EXACT_MATCH_THRESHOLD = 0.98
+TITLE_STRONG_MATCH_THRESHOLD = 0.82
+COMBINED_STRONG_MATCH_THRESHOLD = 0.76
+KEYWORD_OVERLAP_STRONG_THRESHOLD = 0.66
+WARNING_SIMILARITY_THRESHOLD = 0.55
+
 ALLOWED_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
     TaskStatus.open: {TaskStatus.selected},
     TaskStatus.selected: {TaskStatus.in_progress},
@@ -18,6 +62,17 @@ ALLOWED_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
     TaskStatus.ready_for_acceptance: {TaskStatus.closed},
     TaskStatus.closed: set(),
 }
+
+
+@dataclass(frozen=True)
+class DuplicateSignal:
+    task: Task
+    title_similarity: float
+    description_similarity: float
+    keyword_overlap: float
+    combined_score: float
+    normalized_title_match: bool
+    normalized_description_match: bool
 
 
 def _task_query(db: Session):
@@ -47,6 +102,120 @@ def _validate_transition(current: TaskStatus, target: TaskStatus) -> None:
         )
 
 
+def _tokenize(text: str) -> list[str]:
+    tokens: list[str] = []
+    for raw in TOKEN_PATTERN.findall(text.lower()):
+        if len(raw) <= 2:
+            continue
+        if raw in STOP_WORDS:
+            continue
+        tokens.append(raw)
+    return tokens
+
+
+def _normalized_exact_text(text: str) -> str:
+    return " ".join(TOKEN_PATTERN.findall(text.lower()))
+
+
+def _jaccard_similarity(left: set[str], right: set[str]) -> float:
+    if not left and not right:
+        return 1.0
+    if not left or not right:
+        return 0.0
+    return len(left & right) / len(left | right)
+
+
+def _keyword_overlap(left: list[str], right: list[str]) -> float:
+    if not left or not right:
+        return 0.0
+    left_counter = Counter(left)
+    right_counter = Counter(right)
+    overlap = 0
+    for token in left_counter.keys() & right_counter.keys():
+        overlap += min(left_counter[token], right_counter[token])
+    return overlap / max(len(left), len(right))
+
+
+def _duplicate_signal(candidate: Task, payload: TaskCreate) -> DuplicateSignal:
+    payload_title_tokens = _tokenize(payload.title)
+    payload_desc_tokens = _tokenize(payload.description)
+    payload_all_tokens = payload_title_tokens + payload_desc_tokens
+
+    candidate_title_tokens = _tokenize(candidate.title)
+    candidate_desc_tokens = _tokenize(candidate.description)
+    candidate_all_tokens = candidate_title_tokens + candidate_desc_tokens
+
+    title_similarity = _jaccard_similarity(set(payload_title_tokens), set(candidate_title_tokens))
+    description_similarity = _jaccard_similarity(set(payload_desc_tokens), set(candidate_desc_tokens))
+    keyword_overlap = _keyword_overlap(payload_all_tokens, candidate_all_tokens)
+
+    same_type_boost = 0.08 if candidate.type == payload.type else 0.0
+    normalized_title_match = _normalized_exact_text(payload.title) == _normalized_exact_text(candidate.title)
+    normalized_description_match = _normalized_exact_text(payload.description) == _normalized_exact_text(
+        candidate.description
+    )
+    combined_score = (
+        (title_similarity * 0.64)
+        + (description_similarity * 0.18)
+        + (keyword_overlap * 0.18)
+        + same_type_boost
+    )
+
+    return DuplicateSignal(
+        task=candidate,
+        title_similarity=title_similarity,
+        description_similarity=description_similarity,
+        keyword_overlap=keyword_overlap,
+        combined_score=min(combined_score, 1.0),
+        normalized_title_match=normalized_title_match,
+        normalized_description_match=normalized_description_match,
+    )
+
+
+def _is_confident_duplicate(signal: DuplicateSignal) -> bool:
+    if signal.normalized_title_match and signal.normalized_description_match:
+        return True
+    if signal.title_similarity >= TITLE_EXACT_MATCH_THRESHOLD and signal.keyword_overlap >= 0.7:
+        return True
+    return (
+        signal.title_similarity >= TITLE_STRONG_MATCH_THRESHOLD
+        and signal.combined_score >= COMBINED_STRONG_MATCH_THRESHOLD
+        and signal.keyword_overlap >= KEYWORD_OVERLAP_STRONG_THRESHOLD
+    )
+
+
+def _find_best_duplicate_signal(db: Session, project_id: int, payload: TaskCreate) -> DuplicateSignal | None:
+    candidates = (
+        db.query(Task)
+        .filter(Task.project_id == project_id)
+        .order_by(Task.updated_at.desc())
+        .all()
+    )
+
+    if not candidates:
+        return None
+
+    ranked = sorted(
+        (_duplicate_signal(candidate, payload) for candidate in candidates),
+        key=lambda item: item.combined_score,
+        reverse=True,
+    )
+    if not ranked:
+        return None
+
+    best = ranked[0]
+    return best
+
+
+def _format_similarity_warning(signal: DuplicateSignal) -> str:
+    score = round(signal.combined_score * 100)
+    return (
+        "Suspiciously similar task detected "
+        f"({score}%): #{signal.task.id} '{signal.task.title}'. "
+        "Warning threshold: 55%."
+    )
+
+
 @router.post("/projects/{project_id}/tasks", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
 def create_task(
     project_id: int,
@@ -55,6 +224,44 @@ def create_task(
     current_user: User = Depends(require_roles(UserRole.manager)),
 ) -> TaskRead:
     _ = get_project_or_404(db, project_id)
+
+    best_duplicate = _find_best_duplicate_signal(db, project_id, payload)
+    if best_duplicate is not None and _is_confident_duplicate(best_duplicate):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Possible duplicate task found: "
+                f"#{best_duplicate.task.id} '{best_duplicate.task.title}' "
+                f"(score={best_duplicate.combined_score:.2f})"
+            ),
+        )
+
+    review_required = (
+        best_duplicate is not None and best_duplicate.combined_score >= WARNING_SIMILARITY_THRESHOLD
+    )
+    review_confirmed = (
+        payload.duplicate_review_confirmed
+        and payload.duplicate_review_task_id is not None
+        and best_duplicate is not None
+        and payload.duplicate_review_task_id == best_duplicate.task.id
+    )
+
+    if review_required and not review_confirmed:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "duplicate_review_required",
+                "message": _format_similarity_warning(best_duplicate),
+                "task_id": best_duplicate.task.id,
+                "task_title": best_duplicate.task.title,
+                "similarity_percent": round(best_duplicate.combined_score * 100),
+            },
+        )
+
+    if payload.duplicate_review_confirmed and not review_required:
+        raise HTTPException(status_code=400, detail="Duplicate review confirmation is not required")
+    if payload.duplicate_review_confirmed and payload.duplicate_review_task_id is None:
+        raise HTTPException(status_code=400, detail="Duplicate review confirmation is invalid")
 
     if payload.assignee_id is not None:
         assignee = get_user_or_404(db, payload.assignee_id)
@@ -68,7 +275,13 @@ def create_task(
         if sprint.project_id != project_id:
             raise HTTPException(status_code=400, detail="Sprint does not belong to this project")
 
-    task = Task(project_id=project_id, created_by_id=current_user.id, **payload.model_dump())
+    task_data = payload.model_dump(
+        exclude={
+            "duplicate_review_confirmed",
+            "duplicate_review_task_id",
+        }
+    )
+    task = Task(project_id=project_id, created_by_id=current_user.id, **task_data)
     db.add(task)
     db.flush()
 

@@ -12,6 +12,7 @@ const state = {
   tasks: [],
   dashboard: null,
   historyByTask: {},
+  duplicateReview: null,
 };
 
 const els = {
@@ -44,6 +45,12 @@ const els = {
   taskList: document.getElementById("taskList"),
   dashboardSummary: document.getElementById("dashboardSummary"),
   globalMessage: document.getElementById("globalMessage"),
+  duplicateReviewModal: document.getElementById("duplicateReviewModal"),
+  duplicateReviewMessage: document.getElementById("duplicateReviewMessage"),
+  duplicateReviewDetails: document.getElementById("duplicateReviewDetails"),
+  duplicateReviewViewBtn: document.getElementById("duplicateReviewViewBtn"),
+  duplicateReviewApproveBtn: document.getElementById("duplicateReviewApproveBtn"),
+  duplicateReviewRejectBtn: document.getElementById("duplicateReviewRejectBtn"),
 };
 
 const NEXT_STATUS = {
@@ -84,6 +91,14 @@ function showMessage(text, type = "info") {
   }, 2800);
 }
 
+class ApiError extends Error {
+  constructor(message, status, payload) {
+    super(message);
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
 async function api(path, options = {}) {
   const method = options.method || "GET";
   const headers = { ...(options.headers || {}) };
@@ -110,14 +125,21 @@ async function api(path, options = {}) {
     if (response.status === 401) {
       clearSession();
     }
+    let errorPayload = null;
     let detail = "Request failed";
     try {
-      const errorPayload = await response.json();
-      detail = errorPayload.detail || detail;
+      errorPayload = await response.json();
+      if (typeof errorPayload?.detail === "string") {
+        detail = errorPayload.detail;
+      } else if (typeof errorPayload?.detail?.message === "string") {
+        detail = errorPayload.detail.message;
+      } else if (typeof errorPayload?.message === "string") {
+        detail = errorPayload.message;
+      }
     } catch (_) {
       // no-op
     }
-    throw new Error(detail);
+    throw new ApiError(detail, response.status, errorPayload);
   }
 
   if (response.status === 204) return null;
@@ -142,9 +164,11 @@ function clearSession() {
   state.dashboard = null;
   state.selectedProjectId = null;
   state.historyByTask = {};
+  state.duplicateReview = null;
   localStorage.removeItem(TOKEN_KEY);
   renderAuthState();
   renderWorkspace();
+  els.duplicateReviewModal.classList.add("hidden");
 }
 
 function renderAuthState() {
@@ -599,6 +623,55 @@ function renderWorkspace() {
   renderTaskList();
 }
 
+function closeDuplicateReviewModal() {
+  state.duplicateReview = null;
+  els.duplicateReviewModal.classList.add("hidden");
+  els.duplicateReviewDetails.classList.add("hidden");
+  els.duplicateReviewDetails.innerHTML = "";
+  els.duplicateReviewApproveBtn.disabled = true;
+}
+
+function openDuplicateReviewModal(reviewDetail, formPayload) {
+  state.duplicateReview = {
+    taskId: reviewDetail.task_id,
+    similarityPercent: reviewDetail.similarity_percent,
+    formPayload,
+    viewed: false,
+  };
+  els.duplicateReviewMessage.textContent =
+    reviewDetail.message || "Найдена похожая задача. Проверь найденный дубль и прими решение.";
+  els.duplicateReviewDetails.classList.add("hidden");
+  els.duplicateReviewDetails.innerHTML = "";
+  els.duplicateReviewApproveBtn.disabled = true;
+  els.duplicateReviewModal.classList.remove("hidden");
+}
+
+function buildTaskCreatePayload(formData) {
+  const assigneeRaw = String(formData.get("assignee_id") || "");
+  const sprintRaw = String(formData.get("sprint_id") || "");
+  return {
+    title: String(formData.get("title") || ""),
+    description: String(formData.get("description") || ""),
+    type: String(formData.get("type") || "feature"),
+    priority: String(formData.get("priority") || "medium"),
+    assignee_id: assigneeRaw ? Number(assigneeRaw) : null,
+    sprint_id: sprintRaw ? Number(sprintRaw) : null,
+  };
+}
+
+async function createTask(payload) {
+  const createdTask = await api(`/projects/${state.selectedProjectId}/tasks`, {
+    method: "POST",
+    body: payload,
+  });
+
+  els.taskCreateForm.reset();
+  await loadProjectContext();
+  await loadTasks();
+  renderWorkspace();
+  return createdTask;
+}
+
 els.loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const formData = new FormData(els.loginForm);
@@ -730,29 +803,63 @@ els.taskCreateForm.addEventListener("submit", async (event) => {
   if (!isManager() || !state.selectedProjectId) return;
 
   const formData = new FormData(els.taskCreateForm);
-  const assigneeRaw = String(formData.get("assignee_id") || "");
-  const sprintRaw = String(formData.get("sprint_id") || "");
+  const payload = buildTaskCreatePayload(formData);
 
   try {
-    await api(`/projects/${state.selectedProjectId}/tasks`, {
-      method: "POST",
-      body: {
-        title: String(formData.get("title") || ""),
-        description: String(formData.get("description") || ""),
-        type: String(formData.get("type") || "feature"),
-        priority: String(formData.get("priority") || "medium"),
-        assignee_id: assigneeRaw ? Number(assigneeRaw) : null,
-        sprint_id: sprintRaw ? Number(sprintRaw) : null,
-      },
-    });
-    els.taskCreateForm.reset();
-    await loadProjectContext();
-    await loadTasks();
-    renderWorkspace();
+    await createTask(payload);
     showMessage("Задача создана", "success");
+  } catch (error) {
+    if (error instanceof ApiError && error.payload?.detail?.code === "duplicate_review_required") {
+      openDuplicateReviewModal(error.payload.detail, payload);
+      return;
+    }
+    showMessage(error.message, "error");
+  }
+});
+
+els.duplicateReviewViewBtn.addEventListener("click", async () => {
+  if (!state.duplicateReview) return;
+
+  try {
+    const task = await api(`/tasks/${state.duplicateReview.taskId}`);
+    els.duplicateReviewDetails.innerHTML = `
+      <div><strong>#${task.id} ${task.title}</strong></div>
+      <div class="muted">Тип: ${task.type}, Приоритет: ${task.priority}, Статус: ${task.status}</div>
+      <div>${task.description || "Без описания"}</div>
+    `;
+    els.duplicateReviewDetails.classList.remove("hidden");
+    state.duplicateReview.viewed = true;
+    els.duplicateReviewApproveBtn.disabled = false;
   } catch (error) {
     showMessage(error.message, "error");
   }
+});
+
+els.duplicateReviewApproveBtn.addEventListener("click", async () => {
+  if (!state.duplicateReview || !state.duplicateReview.viewed) {
+    return;
+  }
+
+  try {
+    await createTask({
+      ...state.duplicateReview.formPayload,
+      duplicate_review_confirmed: true,
+      duplicate_review_task_id: state.duplicateReview.taskId,
+    });
+    closeDuplicateReviewModal();
+    showMessage("Задача создана после проверки похожей", "warning");
+  } catch (error) {
+    if (error instanceof ApiError && error.payload?.detail?.code === "duplicate_review_required") {
+      openDuplicateReviewModal(error.payload.detail, state.duplicateReview.formPayload);
+      return;
+    }
+    showMessage(error.message, "error");
+  }
+});
+
+els.duplicateReviewRejectBtn.addEventListener("click", () => {
+  closeDuplicateReviewModal();
+  showMessage("Создание задачи отменено", "info");
 });
 
 els.filterForm.addEventListener("submit", async (event) => {

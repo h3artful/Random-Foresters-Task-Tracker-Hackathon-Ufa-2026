@@ -89,6 +89,8 @@ class TaskCreate(BaseModel):
     priority: TaskPriority = TaskPriority.medium
     assignee_id: int | None = None
     sprint_id: int | None = None
+    duplicate_review_confirmed: bool = False
+    duplicate_review_task_id: int | None = None
 
 
 class TaskAssign(BaseModel):

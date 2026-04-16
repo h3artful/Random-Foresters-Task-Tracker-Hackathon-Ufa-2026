@@ -279,3 +279,194 @@ def test_access_and_filters(client: TestClient) -> None:
         headers=dev_a_headers,
     )
     assert forbidden_project.status_code == 403
+
+
+def test_task_duplicate_detection_blocks_confident_duplicate(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+    manager_email = f"dup-mgr-{suffix}@example.com"
+    developer_email = f"dup-dev-{suffix}@example.com"
+
+    manager = register_user(client, "Dup Manager", manager_email)
+    developer = register_user(client, "Dup Dev", developer_email)
+
+    manager_headers = login_headers(client, manager_email)
+
+    project = client.post(
+        "/api/projects",
+        json={"name": "Duplicate Guard", "description": "project for duplicate checks"},
+        headers=manager_headers,
+    )
+    assert project.status_code == 201
+    project_id = project.json()["id"]
+
+    add_member = client.post(
+        f"/api/projects/{project_id}/members",
+        json={"user_id": developer["id"]},
+        headers=manager_headers,
+    )
+    assert add_member.status_code == 201
+
+    original = client.post(
+        f"/api/projects/{project_id}/tasks",
+        json={
+            "title": "Implement JWT login endpoint",
+            "description": "Create access token endpoint and validate credentials",
+            "type": "feature",
+            "priority": "high",
+            "assignee_id": developer["id"],
+        },
+        headers=manager_headers,
+    )
+    assert original.status_code == 201
+
+    duplicate = client.post(
+        f"/api/projects/{project_id}/tasks",
+        json={
+            "title": "Implement JWT endpoint for login",
+            "description": "Create token endpoint and validate user credentials",
+            "type": "feature",
+            "priority": "high",
+            "assignee_id": developer["id"],
+        },
+        headers=manager_headers,
+    )
+    assert duplicate.status_code == 409
+    assert "Possible duplicate task found" in duplicate.json()["detail"]
+
+
+def test_task_duplicate_detection_blocks_duplicate_of_closed_task(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+    manager_email = f"dup-closed-mgr-{suffix}@example.com"
+    developer_email = f"dup-closed-dev-{suffix}@example.com"
+
+    manager = register_user(client, "Dup Closed Manager", manager_email)
+    developer = register_user(client, "Dup Closed Dev", developer_email)
+
+    manager_headers = login_headers(client, manager_email)
+    dev_headers = login_headers(client, developer_email)
+
+    project = client.post(
+        "/api/projects",
+        json={"name": "Duplicate Closed Guard", "description": "project for closed duplicate checks"},
+        headers=manager_headers,
+    )
+    assert project.status_code == 201
+    project_id = project.json()["id"]
+
+    add_member = client.post(
+        f"/api/projects/{project_id}/members",
+        json={"user_id": developer["id"]},
+        headers=manager_headers,
+    )
+    assert add_member.status_code == 201
+
+    original = client.post(
+        f"/api/projects/{project_id}/tasks",
+        json={
+            "title": "Write API usage guide",
+            "description": "Prepare docs for manager and developer workflows",
+            "type": "documentation",
+            "priority": "medium",
+            "assignee_id": developer["id"],
+        },
+        headers=manager_headers,
+    )
+    assert original.status_code == 201
+    task_id = original.json()["id"]
+
+    selected = client.patch(f"/api/tasks/{task_id}/status", json={"status": "selected"}, headers=dev_headers)
+    in_progress = client.patch(f"/api/tasks/{task_id}/status", json={"status": "in_progress"}, headers=dev_headers)
+    ready = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"status": "ready_for_acceptance"},
+        headers=dev_headers,
+    )
+    closed = client.patch(f"/api/tasks/{task_id}/status", json={"status": "closed"}, headers=manager_headers)
+    assert selected.status_code == 200
+    assert in_progress.status_code == 200
+    assert ready.status_code == 200
+    assert closed.status_code == 200
+
+    duplicate_after_close = client.post(
+        f"/api/projects/{project_id}/tasks",
+        json={
+            "title": "Write API usage guide",
+            "description": "Prepare docs for manager and developer workflows",
+            "type": "documentation",
+            "priority": "medium",
+            "assignee_id": developer["id"],
+        },
+        headers=manager_headers,
+    )
+    assert duplicate_after_close.status_code == 409
+
+
+def test_task_duplicate_detection_requires_review_before_suspicious_creation(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+    manager_email = f"dup-warning-mgr-{suffix}@example.com"
+    developer_email = f"dup-warning-dev-{suffix}@example.com"
+
+    manager = register_user(client, "Dup Warning Manager", manager_email)
+    developer = register_user(client, "Dup Warning Dev", developer_email)
+
+    manager_headers = login_headers(client, manager_email)
+
+    project = client.post(
+        "/api/projects",
+        json={"name": "Duplicate Warning Guard", "description": "project for warning checks"},
+        headers=manager_headers,
+    )
+    assert project.status_code == 201
+    project_id = project.json()["id"]
+
+    add_member = client.post(
+        f"/api/projects/{project_id}/members",
+        json={"user_id": developer["id"]},
+        headers=manager_headers,
+    )
+    assert add_member.status_code == 201
+
+    original = client.post(
+        f"/api/projects/{project_id}/tasks",
+        json={
+            "title": "Write API usage guide",
+            "description": "Document endpoints and auth flow for developers",
+            "type": "documentation",
+            "priority": "medium",
+            "assignee_id": developer["id"],
+        },
+        headers=manager_headers,
+    )
+    assert original.status_code == 201
+
+    suspicious = client.post(
+        f"/api/projects/{project_id}/tasks",
+        json={
+            "title": "Write API integration guide",
+            "description": "Document endpoint examples for onboarding",
+            "type": "documentation",
+            "priority": "medium",
+            "assignee_id": developer["id"],
+        },
+        headers=manager_headers,
+    )
+    assert suspicious.status_code == 409
+    review_payload = suspicious.json()["detail"]
+    assert review_payload["code"] == "duplicate_review_required"
+    assert review_payload["task_id"] == original.json()["id"]
+    assert review_payload["similarity_percent"] >= 55
+
+    approved = client.post(
+        f"/api/projects/{project_id}/tasks",
+        json={
+            "title": "Write API integration guide",
+            "description": "Document endpoint examples for onboarding",
+            "type": "documentation",
+            "priority": "medium",
+            "assignee_id": developer["id"],
+            "duplicate_review_confirmed": True,
+            "duplicate_review_task_id": original.json()["id"],
+        },
+        headers=manager_headers,
+    )
+    assert approved.status_code == 201
