@@ -16,6 +16,7 @@ const state = {
   historyByTask: {},
   duplicateReview: null,
   dragTaskId: null,
+  taskDetailsTaskId: null,
 };
 
 const els = {
@@ -61,6 +62,15 @@ const els = {
   developerWorkloadSummary: document.getElementById("developerWorkloadSummary"),
   developerWorkloadList: document.getElementById("developerWorkloadList"),
   developerWorkloadCloseBtn: document.getElementById("developerWorkloadCloseBtn"),
+  taskDetailsModal: document.getElementById("taskDetailsModal"),
+  taskDetailsTitle: document.getElementById("taskDetailsTitle"),
+  taskDetailsMeta: document.getElementById("taskDetailsMeta"),
+  taskDetailsDescription: document.getElementById("taskDetailsDescription"),
+  taskCommentsList: document.getElementById("taskCommentsList"),
+  taskCommentForm: document.getElementById("taskCommentForm"),
+  taskCommentInput: document.getElementById("taskCommentInput"),
+  taskCommentSubmitBtn: document.getElementById("taskCommentSubmitBtn"),
+  taskDetailsCloseBtn: document.getElementById("taskDetailsCloseBtn"),
 };
 
 const NEXT_STATUS = {
@@ -202,12 +212,14 @@ function clearSession() {
   state.historyByTask = {};
   state.duplicateReview = null;
   state.dragTaskId = null;
+  state.taskDetailsTaskId = null;
   els.taskTitleSearch.value = "";
   localStorage.removeItem(TOKEN_KEY);
   renderAuthState();
   renderWorkspace();
   els.duplicateReviewModal.classList.add("hidden");
   els.developerWorkloadModal.classList.add("hidden");
+  els.taskDetailsModal.classList.add("hidden");
 }
 
 function renderAuthState() {
@@ -331,6 +343,7 @@ function renderProjectList() {
     item.innerHTML = `<strong>${project.name}</strong><div class="tiny muted">${project.description || "без описания"}</div>`;
     item.addEventListener("click", async () => {
       closeDeveloperWorkloadModal();
+      closeTaskDetailsModal();
       state.selectedProjectId = project.id;
       state.historyByTask = {};
       await loadProjectContext();
@@ -345,6 +358,96 @@ function closeDeveloperWorkloadModal() {
   els.developerWorkloadModal.classList.add("hidden");
   els.developerWorkloadSummary.textContent = "";
   els.developerWorkloadList.innerHTML = "";
+}
+
+function closeTaskDetailsModal() {
+  state.taskDetailsTaskId = null;
+  els.taskDetailsModal.classList.add("hidden");
+  els.taskDetailsTitle.textContent = "Задача";
+  els.taskDetailsMeta.textContent = "";
+  els.taskDetailsDescription.textContent = "";
+  els.taskCommentsList.innerHTML = "";
+  els.taskCommentInput.value = "";
+}
+
+function renderTaskComments(comments) {
+  els.taskCommentsList.innerHTML = "";
+  if (!comments.length) {
+    els.taskCommentsList.innerHTML = '<div class="muted">Комментариев пока нет</div>';
+    return;
+  }
+
+  for (const comment of comments) {
+    const item = document.createElement("article");
+    item.className = "comment-item";
+
+    const meta = document.createElement("div");
+    meta.className = "comment-meta";
+    const createdAt = new Date(comment.created_at).toLocaleString();
+    meta.textContent = `${createdAt} | ${comment.author.name} (${comment.author.role})`;
+
+    const body = document.createElement("div");
+    body.className = "comment-body";
+    body.textContent = comment.content;
+
+    item.appendChild(meta);
+    item.appendChild(body);
+    els.taskCommentsList.appendChild(item);
+  }
+}
+
+async function loadTaskCommentsForModal(taskId) {
+  els.taskCommentsList.innerHTML = '<div class="muted">Загрузка комментариев...</div>';
+  try {
+    const comments = await api(`/tasks/${taskId}/comments`);
+    if (state.taskDetailsTaskId !== taskId) {
+      return;
+    }
+    renderTaskComments(comments);
+  } catch (error) {
+    if (state.taskDetailsTaskId !== taskId) {
+      return;
+    }
+    els.taskCommentsList.innerHTML = `<div class="muted">${error.message}</div>`;
+  }
+}
+
+function bindTaskOpenHandler(card, taskId) {
+  card.classList.add("task-card-clickable");
+  card.addEventListener("click", async (event) => {
+    if (event.target.closest("button, select, textarea, input, label, .history-box")) {
+      return;
+    }
+    if (state.dragTaskId) {
+      return;
+    }
+    await openTaskDetailsModal(taskId);
+  });
+}
+
+async function openTaskDetailsModal(taskId) {
+  state.taskDetailsTaskId = taskId;
+  els.taskDetailsTitle.textContent = "Загрузка задачи...";
+  els.taskDetailsMeta.textContent = "";
+  els.taskDetailsDescription.textContent = "";
+  els.taskCommentsList.innerHTML = "";
+  els.taskCommentInput.value = "";
+  els.taskDetailsModal.classList.remove("hidden");
+
+  try {
+    const task = await api(`/tasks/${taskId}`);
+    if (state.taskDetailsTaskId !== taskId) {
+      return;
+    }
+
+    els.taskDetailsTitle.textContent = `#${task.id} ${task.title}`;
+    els.taskDetailsMeta.textContent = `Статус: ${task.status} | Приоритет: ${task.priority} | Тип: ${task.type} | Исполнитель: ${task.assignee ? task.assignee.name : "-"}`;
+    els.taskDetailsDescription.textContent = task.description || "Без описания";
+    await loadTaskCommentsForModal(taskId);
+  } catch (error) {
+    showMessage(error.message, "error");
+    closeTaskDetailsModal();
+  }
 }
 
 function renderDeveloperWorkloadList(tasks) {
@@ -673,6 +776,7 @@ function renderArchiveTaskList(tasks) {
   for (const task of tasks) {
     const card = document.createElement("article");
     card.className = "task-card";
+    bindTaskOpenHandler(card, task.id);
     card.innerHTML = `
       <div class="task-head">
         <h3>${task.title}</h3>
@@ -728,6 +832,7 @@ function createBoardTaskCard(task, developers) {
   const card = document.createElement("article");
   card.className = "board-task-card";
   card.dataset.taskId = String(task.id);
+  bindTaskOpenHandler(card, task.id);
 
   const top = document.createElement("div");
   top.className = "board-task-top";
@@ -1219,6 +1324,44 @@ els.developerWorkloadModal.addEventListener("click", (event) => {
   }
 });
 
+els.taskDetailsCloseBtn.addEventListener("click", () => {
+  closeTaskDetailsModal();
+});
+
+els.taskDetailsModal.addEventListener("click", (event) => {
+  if (event.target === els.taskDetailsModal) {
+    closeTaskDetailsModal();
+  }
+});
+
+els.taskCommentForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!state.taskDetailsTaskId) {
+    return;
+  }
+
+  const content = String(els.taskCommentInput.value || "").trim();
+  if (!content) {
+    showMessage("Комментарий не может быть пустым", "error");
+    return;
+  }
+
+  els.taskCommentSubmitBtn.disabled = true;
+  try {
+    await api(`/tasks/${state.taskDetailsTaskId}/comments`, {
+      method: "POST",
+      body: { content },
+    });
+    els.taskCommentInput.value = "";
+    await loadTaskCommentsForModal(state.taskDetailsTaskId);
+    showMessage("Комментарий добавлен", "success");
+  } catch (error) {
+    showMessage(error.message, "error");
+  } finally {
+    els.taskCommentSubmitBtn.disabled = false;
+  }
+});
+
 els.filterForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
@@ -1269,6 +1412,9 @@ els.taskTabArchive.addEventListener("click", async () => {
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") {
     return;
+  }
+  if (!els.taskDetailsModal.classList.contains("hidden")) {
+    closeTaskDetailsModal();
   }
   if (!els.developerWorkloadModal.classList.contains("hidden")) {
     closeDeveloperWorkloadModal();

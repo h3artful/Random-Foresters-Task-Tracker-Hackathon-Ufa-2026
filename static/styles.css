@@ -376,6 +376,10 @@ button:disabled {
   gap: 8px;
 }
 
+.board-task-card:hover {
+  border-color: #1d4fc6;
+}
+
 .board-task-card.is-dragging {
   opacity: 0.55;
   transform: rotate(1deg);
@@ -456,6 +460,16 @@ button:disabled {
   display: grid;
   gap: 10px;
   background: #ffffff;
+}
+
+.task-card-clickable {
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.task-card-clickable:hover {
+  border-color: #1d4fc6;
+  background: #fbfdff;
 }
 
 .task-head {
@@ -602,6 +616,32 @@ button:disabled {
 
 .workload-item-title {
   font-weight: 600;
+}
+
+.comments-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(42vh, 320px);
+  overflow: auto;
+}
+
+.comment-item {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfdff;
+  padding: 10px;
+  display: grid;
+  gap: 5px;
+}
+
+.comment-meta {
+  font-size: 0.78rem;
+  color: #4f5f81;
+}
+
+.comment-body {
+  white-space: pre-wrap;
+  font-size: 0.88rem;
 }
 
 .hidden {

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Random Foresters's Task Tracker</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260416-5" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260416-6" />
   </head>
   <body>
     <header class="topbar">
@@ -272,8 +272,28 @@
       </section>
     </div>
 
+    <div id="taskDetailsModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="taskDetailsTitle">
+      <section class="modal-card">
+        <h2 id="taskDetailsTitle">Задача</h2>
+        <p id="taskDetailsMeta" class="muted"></p>
+        <div id="taskDetailsDescription" class="modal-details"></div>
+        <h3>Комментарии</h3>
+        <div id="taskCommentsList" class="comments-list"></div>
+        <form id="taskCommentForm" class="stack">
+          <label>
+            Новый комментарий
+            <textarea id="taskCommentInput" rows="3" maxlength="4000" placeholder="Напиши комментарий по задаче"></textarea>
+          </label>
+          <div class="modal-actions">
+            <button id="taskCommentSubmitBtn" type="submit">Добавить комментарий</button>
+            <button id="taskDetailsCloseBtn" type="button" class="secondary">Закрыть</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
     <div id="globalMessage" class="toast hidden"></div>
 
-    <script src="/static/app.js?v=20260416-8"></script>
+    <script src="/static/app.js?v=20260416-9"></script>
   </body>
 </html>

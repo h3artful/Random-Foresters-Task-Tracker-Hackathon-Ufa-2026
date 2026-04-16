@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..database import get_db
 from ..dependencies import get_project_or_404, get_sprint_or_404, get_task_or_404, get_user_or_404, is_project_member
-from ..models import AuditLog, ProjectMember, Task, TaskPriority, TaskStatus, TaskType, User, UserRole, utcnow_naive
-from ..schemas import AuditLogRead, DashboardSummary, TaskAssign, TaskCreate, TaskRead, TaskStatusUpdate
+from ..models import AuditLog, ProjectMember, Task, TaskComment, TaskPriority, TaskStatus, TaskType, User, UserRole, utcnow_naive
+from ..schemas import AuditLogRead, DashboardSummary, TaskAssign, TaskCommentCreate, TaskCommentRead, TaskCreate, TaskRead, TaskStatusUpdate
 from ..security import get_current_user, require_roles
 
 router = APIRouter(tags=["Tasks"], dependencies=[Depends(get_current_user)])
@@ -82,6 +82,10 @@ def _task_query(db: Session):
         joinedload(Task.archived_by),
         joinedload(Task.sprint),
     )
+
+
+def _task_comments_query(db: Session):
+    return db.query(TaskComment).options(joinedload(TaskComment.author))
 
 
 def _ensure_task_access(db: Session, task: Task, user: User) -> None:
@@ -485,6 +489,50 @@ def get_task_history(
         .order_by(AuditLog.created_at.desc())
         .all()
     )
+
+
+@router.get("/tasks/{task_id}/comments", response_model=list[TaskCommentRead])
+def get_task_comments(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[TaskComment]:
+    task = get_task_or_404(db, task_id)
+    _ensure_task_access(db, task, current_user)
+
+    return (
+        _task_comments_query(db)
+        .filter(TaskComment.task_id == task_id)
+        .order_by(TaskComment.created_at.asc())
+        .all()
+    )
+
+
+@router.post("/tasks/{task_id}/comments", response_model=TaskCommentRead, status_code=status.HTTP_201_CREATED)
+def add_task_comment(
+    task_id: int,
+    payload: TaskCommentCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> TaskComment:
+    task = get_task_or_404(db, task_id)
+    _ensure_task_access(db, task, current_user)
+
+    content = payload.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Comment cannot be empty")
+
+    comment = TaskComment(
+        task_id=task.id,
+        author_id=current_user.id,
+        content=content,
+    )
+    db.add(comment)
+    db.flush()
+    _audit(db, task.id, current_user.id, "comment_added", f"comment_id={comment.id}")
+
+    db.commit()
+    return _task_comments_query(db).filter(TaskComment.id == comment.id).first()
 
 
 @router.get("/dashboard/summary", response_model=DashboardSummary)

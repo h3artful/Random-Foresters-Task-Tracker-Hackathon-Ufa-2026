@@ -101,6 +101,10 @@ class TaskStatusUpdate(BaseModel):
     status: TaskStatus
 
 
+class TaskCommentCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=4000)
+
+
 class UserShort(BaseModel):
     id: int
     name: str
@@ -147,6 +151,17 @@ class AuditLogRead(BaseModel):
     details: str
     created_at: datetime
     actor: UserShort | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TaskCommentRead(BaseModel):
+    id: int
+    task_id: int
+    author_id: int
+    content: str
+    created_at: datetime
+    author: UserShort
 
     model_config = ConfigDict(from_attributes=True)
 

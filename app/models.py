@@ -154,6 +154,24 @@ class Task(Base):
     creator: Mapped[User] = relationship("User", foreign_keys=[created_by_id])
     assignee: Mapped[User | None] = relationship("User", foreign_keys=[assignee_id])
     archived_by: Mapped[User | None] = relationship("User", foreign_keys=[archived_by_id])
+    comments: Mapped[list[TaskComment]] = relationship(
+        "TaskComment",
+        back_populates="task",
+        cascade="all, delete-orphan",
+    )
+
+
+class TaskComment(Base):
+    __tablename__ = "task_comments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"), nullable=False, index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
+
+    task: Mapped[Task] = relationship("Task", back_populates="comments")
+    author: Mapped[User] = relationship("User")
 
 
 class AuditLog(Base):

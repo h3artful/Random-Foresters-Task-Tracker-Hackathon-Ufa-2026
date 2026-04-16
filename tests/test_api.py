@@ -188,6 +188,93 @@ def test_project_sprint_task_flow(client: TestClient) -> None:
     assert len(history.json()) >= 4
 
 
+def test_task_comments_flow(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+
+    manager_email = f"comments-mgr-{suffix}@example.com"
+    developer_email = f"comments-dev-{suffix}@example.com"
+    outsider_email = f"comments-outsider-{suffix}@example.com"
+
+    manager = register_user(client, "Comments Manager", manager_email)
+    developer = register_user(client, "Comments Developer", developer_email)
+    _ = register_user(client, "Comments Outsider", outsider_email)
+
+    manager_headers = login_headers(client, manager_email)
+    developer_headers = login_headers(client, developer_email)
+    outsider_headers = login_headers(client, outsider_email)
+
+    project = client.post(
+        "/api/projects",
+        json={"name": "Comments Project", "description": "comments checks"},
+        headers=manager_headers,
+    )
+    assert project.status_code == 201
+    project_id = project.json()["id"]
+
+    add_member = client.post(
+        f"/api/projects/{project_id}/members",
+        json={"user_id": developer["id"]},
+        headers=manager_headers,
+    )
+    assert add_member.status_code == 201
+
+    create_task = client.post(
+        f"/api/projects/{project_id}/tasks",
+        json={
+            "title": "Comments task",
+            "description": "Task for comment checks",
+            "type": "feature",
+            "priority": "Medium",
+            "assignee_id": developer["id"],
+        },
+        headers=manager_headers,
+    )
+    assert create_task.status_code == 201
+    task_id = create_task.json()["id"]
+
+    first_comment = client.post(
+        f"/api/tasks/{task_id}/comments",
+        json={"content": "Manager comment"},
+        headers=manager_headers,
+    )
+    assert first_comment.status_code == 201
+    assert first_comment.json()["content"] == "Manager comment"
+    assert first_comment.json()["author_id"] == manager["id"]
+
+    second_comment = client.post(
+        f"/api/tasks/{task_id}/comments",
+        json={"content": "Developer update on this task"},
+        headers=developer_headers,
+    )
+    assert second_comment.status_code == 201
+    assert second_comment.json()["author_id"] == developer["id"]
+
+    empty_comment = client.post(
+        f"/api/tasks/{task_id}/comments",
+        json={"content": "   "},
+        headers=manager_headers,
+    )
+    assert empty_comment.status_code == 400
+
+    comments = client.get(f"/api/tasks/{task_id}/comments", headers=manager_headers)
+    assert comments.status_code == 200
+    payload = comments.json()
+    assert len(payload) == 2
+    assert payload[0]["content"] == "Manager comment"
+    assert payload[0]["author"]["id"] == manager["id"]
+    assert payload[1]["author"]["id"] == developer["id"]
+
+    outsider_read = client.get(f"/api/tasks/{task_id}/comments", headers=outsider_headers)
+    assert outsider_read.status_code == 403
+
+    outsider_write = client.post(
+        f"/api/tasks/{task_id}/comments",
+        json={"content": "Outsider should not comment"},
+        headers=outsider_headers,
+    )
+    assert outsider_write.status_code == 403
+
+
 def test_access_and_filters(client: TestClient) -> None:
     suffix = uuid4().hex[:8]
 
