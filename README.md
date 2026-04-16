@@ -2,6 +2,25 @@
 
 Task management service aligned with hackathon requirements.
 
+## Quick Start
+1. Clone the repository.
+2. Make sure `python3` is available (tested on Python `3.14.x`).
+3. Run one command for full setup (including local RU->EN translation resources):
+   - `make setup-all`
+4. Start the app:
+   - `make dev-reload`
+5. Open:
+   - `http://127.0.0.1:8000`
+
+If you only need core app setup without translation bootstrap:
+- `make setup`
+
+Useful commands:
+- `make test` - run tests
+- `make seed` - seed demo data
+- `make bootstrap-translation` - install/update local translation models
+- `make clean-venv` - remove virtualenv
+
 ## Implemented MVP
 - Login with JWT
 - User creation is restricted to `manager`/`admin`
@@ -22,12 +41,10 @@ Task management service aligned with hackathon requirements.
   - Developer: takes task into work and moves it to acceptance
 - REST API + Swagger/OpenAPI
 
-## Local RU->EN translation for ML ETA
+## Local RU->EN Translation for ML ETA
 - ETA model expects English task text.
-- If task title/description contains Cyrillic, backend tries local `ru -> en` translation via `argostranslate`.
+- If task title/description contains Cyrillic, backend translates it locally (`ru -> en`) before prediction.
 - No external translation APIs are used in runtime.
-- To enable translation, install Argos language package `ru -> en` locally.
-- One-time bootstrap command:
-  - `.venv/bin/python scripts/bootstrap_local_translation.py`
+- Translation data is stored locally in project directory `.argos/`.
 - Optional env var: `ARGOS_RU_EN_PACKAGE_PATH=/absolute/path/to/ru_en.argosmodel`
-  - When set, service will try to install the package from that local file on first use.
+  - If set, app will try to install translation package from this local file.

@@ -1,13 +1,36 @@
-.PHONY: dev dev-reload test seed
+PYTHON ?= python3
+VENV ?= .venv
+VENV_PYTHON := $(VENV)/bin/python
+VENV_PIP := $(VENV)/bin/pip
+VENV_UVICORN := $(VENV)/bin/uvicorn
+VENV_PYTEST := $(VENV)/bin/pytest
 
-dev:
-	uvicorn app.main:app
+.PHONY: setup setup-all check-venv bootstrap-translation dev dev-reload test seed clean-venv
 
-dev-reload:
-	WATCHFILES_FORCE_POLLING=true uvicorn app.main:app --reload
+setup:
+	$(PYTHON) -m venv $(VENV)
+	$(VENV_PYTHON) -m pip install --upgrade pip
+	$(VENV_PIP) install -r requirements-dev.txt
 
-test:
-	python3 -m pytest -q
+setup-all: setup bootstrap-translation
 
-seed:
-	python3 -m app.seed
+check-venv:
+	@test -x "$(VENV_PYTHON)" || (echo "Virtualenv not found. Run 'make setup' first."; exit 1)
+
+bootstrap-translation: check-venv
+	$(VENV_PYTHON) scripts/bootstrap_local_translation.py
+
+dev: check-venv
+	$(VENV_UVICORN) app.main:app
+
+dev-reload: check-venv
+	WATCHFILES_FORCE_POLLING=true $(VENV_UVICORN) app.main:app --reload
+
+test: check-venv
+	$(VENV_PYTEST) -q
+
+seed: check-venv
+	$(VENV_PYTHON) -m app.seed
+
+clean-venv:
+	rm -rf $(VENV)
