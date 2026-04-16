@@ -10,6 +10,7 @@ const state = {
   members: [],
   sprints: [],
   tasks: [],
+  taskTitleSearch: "",
   dashboard: null,
   historyByTask: {},
   duplicateReview: null,
@@ -40,7 +41,7 @@ const els = {
   priorityFilter: document.getElementById("priorityFilter"),
   assigneeFilter: document.getElementById("assigneeFilter"),
   sprintFilter: document.getElementById("sprintFilter"),
-  searchFilter: document.getElementById("searchFilter"),
+  taskTitleSearch: document.getElementById("taskTitleSearch"),
   clearFiltersBtn: document.getElementById("clearFiltersBtn"),
   taskList: document.getElementById("taskList"),
   dashboardSummary: document.getElementById("dashboardSummary"),
@@ -163,8 +164,10 @@ function clearSession() {
   state.members = [];
   state.dashboard = null;
   state.selectedProjectId = null;
+  state.taskTitleSearch = "";
   state.historyByTask = {};
   state.duplicateReview = null;
+  els.taskTitleSearch.value = "";
   localStorage.removeItem(TOKEN_KEY);
   renderAuthState();
   renderWorkspace();
@@ -233,7 +236,6 @@ function readTaskFilters() {
     priority: els.priorityFilter.value,
     assignee_id: els.assigneeFilter.value,
     sprint_id: els.sprintFilter.value,
-    search: els.searchFilter.value.trim(),
   };
 }
 
@@ -247,7 +249,6 @@ async function loadTasks() {
       priority: filters.priority,
       assignee_id: filters.assignee_id,
       sprint_id: filters.sprint_id,
-      search: filters.search,
     },
   });
 }
@@ -470,14 +471,21 @@ function renderTaskList() {
     return;
   }
 
-  if (!state.tasks.length) {
-    els.taskList.innerHTML = '<div class="muted">Задач не найдено по текущим фильтрам</div>';
+  const normalizedSearch = state.taskTitleSearch.trim().toLocaleLowerCase();
+  const filteredTasks = normalizedSearch
+    ? state.tasks.filter((task) => task.title.toLocaleLowerCase().includes(normalizedSearch))
+    : state.tasks;
+
+  if (!filteredTasks.length) {
+    els.taskList.innerHTML = normalizedSearch
+      ? '<div class="muted">Поиск по заголовку не дал результатов</div>'
+      : '<div class="muted">Задач не найдено по текущим фильтрам</div>';
     return;
   }
 
   const developers = getProjectDevelopers();
 
-  for (const task of state.tasks) {
+  for (const task of filteredTasks) {
     const card = document.createElement("article");
     card.className = "task-card";
 
@@ -880,6 +888,11 @@ els.clearFiltersBtn.addEventListener("click", async () => {
   } catch (error) {
     showMessage(error.message, "error");
   }
+});
+
+els.taskTitleSearch.addEventListener("input", (event) => {
+  state.taskTitleSearch = String(event.target.value || "");
+  renderTaskList();
 });
 
 async function bootstrap() {

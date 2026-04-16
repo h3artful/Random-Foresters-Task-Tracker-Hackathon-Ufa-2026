@@ -177,6 +177,14 @@
           </section>
 
           <section class="card">
+            <h2>Поиск задач</h2>
+            <label>
+              Заголовок
+              <input id="taskTitleSearch" type="search" placeholder="Начните вводить заголовок задачи" />
+            </label>
+          </section>
+
+          <section class="card">
             <h2>Фильтры задач</h2>
             <form id="filterForm" class="filters-grid">
               <label>
@@ -217,10 +225,6 @@
                 Спринт
                 <select id="sprintFilter" name="sprint_id"></select>
               </label>
-              <label>
-                Поиск
-                <input id="searchFilter" name="search" placeholder="title/description" />
-              </label>
               <div class="actions-inline">
                 <button type="submit">Применить</button>
                 <button id="clearFiltersBtn" class="secondary" type="button">Сбросить</button>
@@ -251,6 +255,6 @@
 
     <div id="globalMessage" class="toast hidden"></div>
 
-    <script src="/static/app.js?v=20260416-3"></script>
+    <script src="/static/app.js?v=20260416-4"></script>
   </body>
 </html>
