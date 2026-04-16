@@ -45,7 +45,7 @@ def _ensure_project(db, *, manager: User) -> Project:
     if project is None:
         project = Project(
             name="Hackathon Demo Project",
-            description="Demo space for Task Tracker MVP walkthrough",
+            description="Demo space for Random Foresters's Task Tracker walkthrough",
             created_by_id=manager.id,
         )
         db.add(project)
