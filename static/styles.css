@@ -598,6 +598,29 @@ button:disabled {
   gap: 8px;
 }
 
+.time-slider-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.time-slider-grid label {
+  gap: 8px;
+}
+
+.time-slider-grid input[type="range"] {
+  accent-color: var(--primary);
+}
+
+.time-summary {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfdff;
+  padding: 10px;
+  font-size: 0.9rem;
+  color: #30456f;
+}
+
 .workload-list {
   display: grid;
   gap: 8px;
@@ -679,6 +702,10 @@ button:disabled {
   }
 
   .row-two {
+    grid-template-columns: 1fr;
+  }
+
+  .time-slider-grid {
     grid-template-columns: 1fr;
   }
 

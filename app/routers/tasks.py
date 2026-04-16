@@ -107,6 +107,43 @@ def _validate_transition(current: TaskStatus, target: TaskStatus) -> None:
         )
 
 
+def _apply_time_tracking(task: Task, payload: TaskStatusUpdate) -> None:
+    if payload.status != TaskStatus.ready_for_acceptance and (
+        payload.reported_spent_minutes is not None or payload.reported_spent_comment
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Manual spent time can be provided only when moving task to ready_for_acceptance",
+        )
+
+    now = utcnow_naive()
+    previous_status = task.status
+    target_status = payload.status
+
+    if previous_status == TaskStatus.in_progress and target_status != TaskStatus.in_progress:
+        if task.in_progress_started_at is not None:
+            elapsed = max(0, int((now - task.in_progress_started_at).total_seconds()))
+            task.tracked_seconds += elapsed
+        task.in_progress_started_at = None
+
+    if previous_status != TaskStatus.in_progress and target_status == TaskStatus.in_progress:
+        task.in_progress_started_at = now
+        # New in-progress cycle invalidates previous manual correction.
+        task.reported_seconds = None
+        task.reported_comment = None
+
+    if target_status == TaskStatus.ready_for_acceptance:
+        if payload.reported_spent_comment and payload.reported_spent_minutes is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Manual time comment requires reported_spent_minutes",
+            )
+        if payload.reported_spent_minutes is not None:
+            task.reported_seconds = payload.reported_spent_minutes * 60
+            cleaned_comment = (payload.reported_spent_comment or "").strip()
+            task.reported_comment = cleaned_comment or None
+
+
 def _tokenize(text: str) -> list[str]:
     tokens: list[str] = []
     for raw in TOKEN_PATTERN.findall(text.lower()):
@@ -388,10 +425,13 @@ def update_task_status(
     _ensure_task_access(db, task, current_user)
 
     if task.status == payload.status:
+        if payload.reported_spent_minutes is not None or payload.reported_spent_comment:
+            raise HTTPException(status_code=400, detail="Task status is already set to this value")
         return _task_query(db).filter(Task.id == task.id).first()
 
     if current_user.role == UserRole.admin:
         previous = task.status
+        _apply_time_tracking(task, payload)
         task.status = payload.status
         _audit(db, task.id, current_user.id, "status_changed", f"{previous.value} -> {payload.status.value}")
         db.commit()
@@ -425,6 +465,7 @@ def update_task_status(
                 raise HTTPException(status_code=403, detail="Only assignee can progress this task")
 
     previous = task.status
+    _apply_time_tracking(task, payload)
     task.status = payload.status
     _audit(db, task.id, current_user.id, "status_changed", f"{previous.value} -> {payload.status.value}")
 

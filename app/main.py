@@ -28,6 +28,14 @@ def ensure_legacy_schema() -> None:
         if "archived_at" not in columns:
             connection.execute(text("ALTER TABLE tasks ADD COLUMN archived_at DATETIME"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_tasks_archived_at ON tasks (archived_at)"))
+        if "tracked_seconds" not in columns:
+            connection.execute(text("ALTER TABLE tasks ADD COLUMN tracked_seconds INTEGER NOT NULL DEFAULT 0"))
+        if "in_progress_started_at" not in columns:
+            connection.execute(text("ALTER TABLE tasks ADD COLUMN in_progress_started_at DATETIME"))
+        if "reported_seconds" not in columns:
+            connection.execute(text("ALTER TABLE tasks ADD COLUMN reported_seconds INTEGER"))
+        if "reported_comment" not in columns:
+            connection.execute(text("ALTER TABLE tasks ADD COLUMN reported_comment TEXT"))
         connection.execute(
             text(
                 """
@@ -47,6 +55,7 @@ def ensure_legacy_schema() -> None:
                 """
             )
         )
+        connection.execute(text("UPDATE tasks SET tracked_seconds = 0 WHERE tracked_seconds IS NULL"))
 
 
 @asynccontextmanager

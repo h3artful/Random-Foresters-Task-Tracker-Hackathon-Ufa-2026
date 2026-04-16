@@ -141,6 +141,10 @@ class Task(Base):
     assignee_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     archived_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    tracked_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    in_progress_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    reported_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reported_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,

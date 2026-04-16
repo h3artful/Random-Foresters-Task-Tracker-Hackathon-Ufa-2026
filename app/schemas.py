@@ -99,6 +99,8 @@ class TaskAssign(BaseModel):
 
 class TaskStatusUpdate(BaseModel):
     status: TaskStatus
+    reported_spent_minutes: int | None = Field(default=None, ge=0, le=100_000)
+    reported_spent_comment: str | None = Field(default=None, max_length=1000)
 
 
 class TaskCommentCreate(BaseModel):
@@ -134,6 +136,10 @@ class TaskRead(BaseModel):
     assignee_id: int | None
     archived_by_id: int | None
     archived_at: datetime | None
+    tracked_seconds: int
+    in_progress_started_at: datetime | None
+    reported_seconds: int | None
+    reported_comment: str | None
     created_at: datetime
     updated_at: datetime
     creator: UserShort

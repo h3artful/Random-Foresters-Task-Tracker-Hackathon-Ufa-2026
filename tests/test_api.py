@@ -1,5 +1,6 @@
 import os
 import sys
+from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -14,8 +15,9 @@ TEST_DB_PATH = ROOT / "tests" / "test_task_tracker.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
 os.environ["JWT_SECRET_KEY"] = "test-secret-key-with-safe-length-123456"
 
-from app.database import Base, engine
+from app.database import Base, SessionLocal, engine
 from app.main import app
+from app.models import Task, utcnow_naive
 
 
 @pytest.fixture(autouse=True)
@@ -712,3 +714,159 @@ def test_task_duplicate_detection_requires_review_before_suspicious_creation(cli
         headers=manager_headers,
     )
     assert approved.status_code == 201
+
+
+def test_hybrid_time_tracking_auto_accumulates_and_accepts_manual_correction(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+    manager_email = f"time-mgr-{suffix}@example.com"
+    developer_email = f"time-dev-{suffix}@example.com"
+
+    manager = register_user(client, "Time Manager", manager_email)
+    developer = register_user(client, "Time Dev", developer_email)
+
+    manager_headers = login_headers(client, manager_email)
+    developer_headers = login_headers(client, developer_email)
+
+    project = client.post(
+        "/api/projects",
+        json={"name": "Time Hybrid Project", "description": "time checks"},
+        headers=manager_headers,
+    )
+    assert project.status_code == 201
+    project_id = project.json()["id"]
+
+    add_member = client.post(
+        f"/api/projects/{project_id}/members",
+        json={"user_id": developer["id"]},
+        headers=manager_headers,
+    )
+    assert add_member.status_code == 201
+
+    create_task = client.post(
+        f"/api/projects/{project_id}/tasks",
+        json={
+            "title": "Track spent time",
+            "description": "Hybrid time tracking",
+            "type": "feature",
+            "priority": "Medium",
+            "assignee_id": developer["id"],
+        },
+        headers=manager_headers,
+    )
+    assert create_task.status_code == 201
+    task_id = create_task.json()["id"]
+
+    selected = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"status": "selected"},
+        headers=developer_headers,
+    )
+    assert selected.status_code == 200
+
+    in_progress = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"status": "in_progress"},
+        headers=developer_headers,
+    )
+    assert in_progress.status_code == 200
+    assert in_progress.json()["in_progress_started_at"] is not None
+
+    with SessionLocal() as db:
+        task = db.query(Task).filter(Task.id == task_id).first()
+        task.in_progress_started_at = utcnow_naive() - timedelta(minutes=10)
+        db.commit()
+
+    ready = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"status": "ready_for_acceptance"},
+        headers=developer_headers,
+    )
+    assert ready.status_code == 200
+    ready_payload = ready.json()
+    assert ready_payload["tracked_seconds"] >= 600
+    assert ready_payload["reported_seconds"] is None
+    assert ready_payload["in_progress_started_at"] is None
+
+def test_time_tracking_validates_manual_payload_and_stores_reported_time(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+    admin_email = f"time-admin-{suffix}@example.com"
+    developer_email = f"time2-dev-{suffix}@example.com"
+
+    admin_register = client.post(
+        "/api/auth/register",
+        json={
+            "name": "Time Admin",
+            "email": admin_email,
+            "password": "pass-12345",
+            "role": "admin",
+        },
+    )
+    assert admin_register.status_code == 201
+
+    developer = register_user(client, "Time Dev Two", developer_email)
+    admin_headers = login_headers(client, admin_email)
+    developer_headers = login_headers(client, developer_email)
+
+    project = client.post(
+        "/api/projects",
+        json={"name": "Manual Time Project", "description": "manual time checks"},
+        headers=admin_headers,
+    )
+    assert project.status_code == 201
+    project_id = project.json()["id"]
+
+    add_member = client.post(
+        f"/api/projects/{project_id}/members",
+        json={"user_id": developer["id"]},
+        headers=admin_headers,
+    )
+    assert add_member.status_code == 201
+
+    create_task = client.post(
+        f"/api/projects/{project_id}/tasks",
+        json={
+            "title": "Manual time report",
+            "description": "Manual correction flow",
+            "type": "documentation",
+            "priority": "Low",
+            "assignee_id": developer["id"],
+        },
+        headers=admin_headers,
+    )
+    assert create_task.status_code == 201
+    task_id = create_task.json()["id"]
+
+    selected = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"status": "selected"},
+        headers=developer_headers,
+    )
+    assert selected.status_code == 200
+
+    invalid_manual_payload = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"status": "in_progress", "reported_spent_minutes": 12},
+        headers=developer_headers,
+    )
+    assert invalid_manual_payload.status_code == 400
+
+    in_progress = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"status": "in_progress"},
+        headers=developer_headers,
+    )
+    assert in_progress.status_code == 200
+
+    ready_with_manual = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={
+            "status": "ready_for_acceptance",
+            "reported_spent_minutes": 135,
+            "reported_spent_comment": "Includes pair-programming session",
+        },
+        headers=developer_headers,
+    )
+    assert ready_with_manual.status_code == 200
+    ready_payload = ready_with_manual.json()
+    assert ready_payload["reported_seconds"] == 8100
+    assert ready_payload["reported_comment"] == "Includes pair-programming session"

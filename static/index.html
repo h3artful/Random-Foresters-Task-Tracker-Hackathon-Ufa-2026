@@ -261,6 +261,39 @@
       </section>
     </div>
 
+    <div id="manualTimeModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="manualTimeTitle">
+      <section class="modal-card">
+        <h2 id="manualTimeTitle">Ручная корректировка времени</h2>
+        <p id="manualTimeAutoHint" class="muted"></p>
+
+        <div class="time-slider-grid">
+          <label>
+            Дни
+            <input id="manualTimeDays" type="range" min="0" max="14" value="0" />
+          </label>
+          <label>
+            Часы
+            <input id="manualTimeHours" type="range" min="0" max="23" value="0" />
+          </label>
+          <label>
+            Минуты
+            <input id="manualTimeMinutes" type="range" min="0" max="59" value="0" step="5" />
+          </label>
+        </div>
+
+        <div id="manualTimeSummary" class="time-summary"></div>
+        <label>
+          Комментарий (необязательно)
+          <textarea id="manualTimeComment" rows="2" maxlength="1000" placeholder="Почему корректировка отличается от автотрекинга"></textarea>
+        </label>
+        <div class="modal-actions">
+          <button id="manualTimeCancelBtn" type="button" class="secondary">Отмена</button>
+          <button id="manualTimeAutoBtn" type="button" class="secondary">Только автотрекинг</button>
+          <button id="manualTimeApplyBtn" type="button">Применить и продолжить</button>
+        </div>
+      </section>
+    </div>
+
     <div id="developerWorkloadModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="developerWorkloadTitle">
       <section class="modal-card">
         <h2 id="developerWorkloadTitle">Загруженность разработчика</h2>
@@ -294,6 +327,6 @@
 
     <div id="globalMessage" class="toast hidden"></div>
 
-    <script src="/static/app.js?v=20260416-9"></script>
+    <script src="/static/app.js?v=20260416-12"></script>
   </body>
 </html>

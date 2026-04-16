@@ -15,6 +15,7 @@ const state = {
   dashboard: null,
   historyByTask: {},
   duplicateReview: null,
+  manualTimeResolver: null,
   dragTaskId: null,
   taskDetailsTaskId: null,
 };
@@ -57,6 +58,16 @@ const els = {
   duplicateReviewViewBtn: document.getElementById("duplicateReviewViewBtn"),
   duplicateReviewApproveBtn: document.getElementById("duplicateReviewApproveBtn"),
   duplicateReviewRejectBtn: document.getElementById("duplicateReviewRejectBtn"),
+  manualTimeModal: document.getElementById("manualTimeModal"),
+  manualTimeAutoHint: document.getElementById("manualTimeAutoHint"),
+  manualTimeDays: document.getElementById("manualTimeDays"),
+  manualTimeHours: document.getElementById("manualTimeHours"),
+  manualTimeMinutes: document.getElementById("manualTimeMinutes"),
+  manualTimeSummary: document.getElementById("manualTimeSummary"),
+  manualTimeComment: document.getElementById("manualTimeComment"),
+  manualTimeCancelBtn: document.getElementById("manualTimeCancelBtn"),
+  manualTimeAutoBtn: document.getElementById("manualTimeAutoBtn"),
+  manualTimeApplyBtn: document.getElementById("manualTimeApplyBtn"),
   developerWorkloadModal: document.getElementById("developerWorkloadModal"),
   developerWorkloadTitle: document.getElementById("developerWorkloadTitle"),
   developerWorkloadSummary: document.getElementById("developerWorkloadSummary"),
@@ -218,6 +229,7 @@ function clearSession() {
   renderAuthState();
   renderWorkspace();
   els.duplicateReviewModal.classList.add("hidden");
+  closeManualTimeModal(null);
   els.developerWorkloadModal.classList.add("hidden");
   els.taskDetailsModal.classList.add("hidden");
 }
@@ -441,7 +453,7 @@ async function openTaskDetailsModal(taskId) {
     }
 
     els.taskDetailsTitle.textContent = `#${task.id} ${task.title}`;
-    els.taskDetailsMeta.textContent = `Статус: ${task.status} | Приоритет: ${task.priority} | Тип: ${task.type} | Исполнитель: ${task.assignee ? task.assignee.name : "-"}`;
+    els.taskDetailsMeta.textContent = `Статус: ${task.status} | Приоритет: ${task.priority} | Тип: ${task.type} | Исполнитель: ${task.assignee ? task.assignee.name : "-"} | Spent: ${formatSpentSummary(task)}`;
     els.taskDetailsDescription.textContent = task.description || "Без описания";
     await loadTaskCommentsForModal(taskId);
   } catch (error) {
@@ -703,6 +715,130 @@ function getTaskById(taskId) {
   return state.tasks.find((task) => task.id === taskId) || null;
 }
 
+function formatDuration(seconds) {
+  const safeSeconds = Math.max(0, Math.floor(seconds || 0));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const secs = safeSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${secs}s`;
+  }
+  return `${secs}s`;
+}
+
+function parseUtcLikeDateToMillis(value) {
+  if (!value) {
+    return Number.NaN;
+  }
+
+  const raw = String(value).trim();
+  if (!raw) {
+    return Number.NaN;
+  }
+
+  const isoBase = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const hasTimezone = /[zZ]$|[+\-]\d{2}:\d{2}$/.test(isoBase);
+  const normalized = hasTimezone ? isoBase : `${isoBase}Z`;
+  return Date.parse(normalized);
+}
+
+function getLiveTrackedSeconds(task) {
+  const baseTracked = Number(task.tracked_seconds || 0);
+  if (task.status !== "in_progress" || !task.in_progress_started_at) {
+    return baseTracked;
+  }
+
+  const startedAtTs = parseUtcLikeDateToMillis(task.in_progress_started_at);
+  if (Number.isNaN(startedAtTs)) {
+    return baseTracked;
+  }
+
+  const elapsed = Math.max(0, Math.floor((Date.now() - startedAtTs) / 1000));
+  return baseTracked + elapsed;
+}
+
+function formatSpentSummary(task) {
+  const trackedText = formatDuration(getLiveTrackedSeconds(task));
+  if (task.reported_seconds == null) {
+    return `auto: ${trackedText} | manual: -`;
+  }
+
+  const comment = task.reported_comment ? ` (${task.reported_comment})` : "";
+  return `auto: ${trackedText} | manual: ${formatDuration(task.reported_seconds)}${comment}`;
+}
+
+function getManualTimeMinutes() {
+  const days = Number(els.manualTimeDays.value || 0);
+  const hours = Number(els.manualTimeHours.value || 0);
+  const minutes = Number(els.manualTimeMinutes.value || 0);
+  return (days * 24 * 60) + (hours * 60) + minutes;
+}
+
+function updateManualTimeSummary() {
+  const days = Number(els.manualTimeDays.value || 0);
+  const hours = Number(els.manualTimeHours.value || 0);
+  const minutes = Number(els.manualTimeMinutes.value || 0);
+  const totalMinutes = getManualTimeMinutes();
+
+  if (totalMinutes === 0) {
+    els.manualTimeSummary.textContent = "Будет использован только автотрекинг.";
+    return;
+  }
+
+  els.manualTimeSummary.textContent =
+    `Выбрано вручную: ${days}d ${hours}h ${minutes}m (${totalMinutes} мин)`;
+}
+
+function closeManualTimeModal(result = null) {
+  els.manualTimeModal.classList.add("hidden");
+  if (state.manualTimeResolver) {
+    const resolver = state.manualTimeResolver;
+    state.manualTimeResolver = null;
+    resolver(result);
+  }
+}
+
+function openManualTimeModal(task) {
+  return new Promise((resolve) => {
+    state.manualTimeResolver = resolve;
+    els.manualTimeDays.value = "0";
+    els.manualTimeHours.value = "0";
+    els.manualTimeMinutes.value = "0";
+    els.manualTimeComment.value = "";
+    els.manualTimeAutoHint.textContent = `Автотрекинг сейчас: ${formatDuration(getLiveTrackedSeconds(task))}`;
+    updateManualTimeSummary();
+    els.manualTimeModal.classList.remove("hidden");
+  });
+}
+
+async function prepareStatusPayload(task, targetStatus) {
+  const payload = { status: targetStatus };
+  if (targetStatus !== "ready_for_acceptance") {
+    return payload;
+  }
+
+  const manualInput = await openManualTimeModal(task);
+  if (manualInput === null) {
+    showMessage("Перевод задачи отменен", "info");
+    return null;
+  }
+
+  if (!manualInput.useManual) {
+    return payload;
+  }
+
+  payload.reported_spent_minutes = manualInput.minutes;
+  if (manualInput.comment) {
+    payload.reported_spent_comment = manualInput.comment;
+  }
+
+  return payload;
+}
+
 function canMoveTaskToStatus(task, targetStatus) {
   if (!task || task.status === targetStatus) {
     return false;
@@ -720,9 +856,14 @@ function clearBoardDropMarkers() {
 }
 
 async function moveTaskToStatus(task, targetStatus) {
+  const payload = await prepareStatusPayload(task, targetStatus);
+  if (!payload) {
+    return;
+  }
+
   await api(`/tasks/${task.id}/status`, {
     method: "PATCH",
-    body: { status: targetStatus },
+    body: payload,
   });
   showMessage("Статус обновлен", "success");
   state.historyByTask[task.id] = null;
@@ -790,6 +931,7 @@ function renderArchiveTaskList(tasks) {
         <div>Creator: ${task.creator.name}</div>
         <div>Assignee: ${task.assignee ? task.assignee.name : "-"}</div>
         <div>Sprint: ${task.sprint ? task.sprint.name : "-"}</div>
+        <div>Spent: ${formatSpentSummary(task)}</div>
         <div>Архивировано: ${new Date(task.archived_at).toLocaleString()}${task.archived_by ? ` (${task.archived_by.name})` : ""}</div>
         <div>${task.description || "Без описания"}</div>
       </div>
@@ -873,6 +1015,7 @@ function createBoardTaskCard(task, developers) {
     <div>#${task.id} • ${task.type}</div>
     <div>Assignee: ${task.assignee ? task.assignee.name : "-"}</div>
     <div>Sprint: ${task.sprint ? task.sprint.name : "-"}</div>
+    <div>Spent: ${formatSpentSummary(task)}</div>
   `;
 
   const badges = document.createElement("div");
@@ -1314,6 +1457,36 @@ els.duplicateReviewRejectBtn.addEventListener("click", () => {
   showMessage("Создание задачи отменено", "info");
 });
 
+[els.manualTimeDays, els.manualTimeHours, els.manualTimeMinutes].forEach((slider) => {
+  slider.addEventListener("input", () => {
+    updateManualTimeSummary();
+  });
+});
+
+els.manualTimeCancelBtn.addEventListener("click", () => {
+  closeManualTimeModal(null);
+});
+
+els.manualTimeAutoBtn.addEventListener("click", () => {
+  closeManualTimeModal({ useManual: false, minutes: 0, comment: "" });
+});
+
+els.manualTimeApplyBtn.addEventListener("click", () => {
+  const minutes = getManualTimeMinutes();
+  const comment = String(els.manualTimeComment.value || "").trim();
+  if (minutes < 0 || !Number.isInteger(minutes)) {
+    showMessage("Время должно быть неотрицательным целым значением", "error");
+    return;
+  }
+  closeManualTimeModal({ useManual: true, minutes, comment });
+});
+
+els.manualTimeModal.addEventListener("click", (event) => {
+  if (event.target === els.manualTimeModal) {
+    closeManualTimeModal(null);
+  }
+});
+
 els.developerWorkloadCloseBtn.addEventListener("click", () => {
   closeDeveloperWorkloadModal();
 });
@@ -1421,6 +1594,9 @@ document.addEventListener("keydown", (event) => {
   }
   if (!els.duplicateReviewModal.classList.contains("hidden")) {
     closeDuplicateReviewModal();
+  }
+  if (!els.manualTimeModal.classList.contains("hidden")) {
+    closeManualTimeModal(null);
   }
 });
 
