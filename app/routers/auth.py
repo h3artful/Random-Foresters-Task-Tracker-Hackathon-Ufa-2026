@@ -6,6 +6,7 @@ from ..database import get_db
 from ..models import User, UserRole
 from ..schemas import TokenResponse, UserRead, UserRegister
 from ..security import create_access_token, get_current_user, hash_password, verify_password
+from ..services.user_creation import create_user_record
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -28,16 +29,13 @@ def register(payload: UserRegister, db: Session = Depends(get_db)) -> User:
     else:
         role = UserRole.manager if user_count == 0 else UserRole.developer
 
-    user = User(
+    return create_user_record(
+        db,
         name=payload.name,
         login=payload.login,
         role=role,
         password_hash=hash_password(payload.password),
     )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
 
 
 def _extract_login_credentials(payload: object) -> tuple[str, str]:

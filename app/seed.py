@@ -5,6 +5,7 @@ from datetime import date
 from .database import Base, SessionLocal, engine
 from .models import Project, ProjectMember, Sprint, SprintStatus, Task, TaskPriority, TaskStatus, TaskType, User, UserRole
 from .security import hash_password
+from .services.user_creation import create_user_record, users_table_has_email_column
 
 DEMO_MANAGER_LOGIN = "manager"
 DEMO_DEVELOPER_LOGIN = "developer"
@@ -15,6 +16,15 @@ DEMO_PASSWORD = "demo12345"
 def _ensure_user(db, *, name: str, login: str, role: UserRole) -> User:
     user = db.query(User).filter(User.login == login).first()
     if user is None:
+        if users_table_has_email_column(db):
+            # Legacy DB compatibility: old schema still requires non-null email.
+            return create_user_record(
+                db,
+                name=name,
+                login=login,
+                role=role,
+                password_hash=hash_password(DEMO_PASSWORD),
+            )
         user = User(
             name=name,
             login=login,

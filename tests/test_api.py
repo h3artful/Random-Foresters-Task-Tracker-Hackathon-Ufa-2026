@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -152,6 +153,65 @@ def test_user_creation_is_restricted_to_manager_or_admin(client: TestClient) -> 
         },
     )
     assert public_register_disabled.status_code == 403
+
+
+def test_user_creation_works_with_legacy_users_email_column(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+
+    with engine.begin() as connection:
+        connection.execute(text("PRAGMA foreign_keys=OFF"))
+        connection.execute(text("DROP INDEX IF EXISTS ix_users_login"))
+        connection.execute(text("DROP TABLE users"))
+        connection.execute(
+            text(
+                """
+                CREATE TABLE users (
+                    id INTEGER NOT NULL,
+                    name VARCHAR(120) NOT NULL,
+                    email VARCHAR(255) NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    role VARCHAR(9) NOT NULL,
+                    created_at DATETIME NOT NULL,
+                    login VARCHAR(255),
+                    PRIMARY KEY (id)
+                )
+                """
+            )
+        )
+        connection.execute(text("CREATE INDEX ix_users_id ON users (id)"))
+        connection.execute(text("CREATE UNIQUE INDEX ix_users_email ON users (email)"))
+        connection.execute(text("CREATE UNIQUE INDEX ix_users_login ON users (login)"))
+        connection.execute(text("PRAGMA foreign_keys=ON"))
+
+    manager = register_user(client, "Legacy Manager", f"legacy-manager-{suffix}", role="manager")
+    manager_headers = login_headers(client, manager["login"])
+
+    admin_created = client.post(
+        "/api/users",
+        json={
+            "name": "Legacy Admin",
+            "login": f"legacy-admin-{suffix}",
+            "password": "pass-12345",
+            "role": "admin",
+        },
+        headers=manager_headers,
+    )
+    assert admin_created.status_code == 201
+    assert admin_created.json()["role"] == "admin"
+
+    admin_headers = login_headers(client, admin_created.json()["login"])
+    created_by_admin = client.post(
+        "/api/users",
+        json={
+            "name": "Legacy Dev",
+            "login": f"legacy-dev-{suffix}",
+            "password": "pass-12345",
+            "role": "developer",
+        },
+        headers=admin_headers,
+    )
+    assert created_by_admin.status_code == 201
+    assert created_by_admin.json()["role"] == "developer"
 
 
 def test_project_sprint_task_flow(client: TestClient) -> None:

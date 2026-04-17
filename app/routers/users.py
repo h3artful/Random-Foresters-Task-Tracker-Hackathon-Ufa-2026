@@ -5,6 +5,7 @@ from ..database import get_db
 from ..models import User, UserRole
 from ..schemas import UserCreate, UserRead
 from ..security import hash_password, require_roles
+from ..services.user_creation import create_user_record
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -27,13 +28,10 @@ def create_user(
     if existing is not None:
         raise HTTPException(status_code=400, detail="A user with this login already exists")
 
-    user = User(
+    return create_user_record(
+        db,
         name=payload.name,
         login=payload.login,
         role=payload.role,
         password_hash=hash_password(payload.password),
     )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
