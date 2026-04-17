@@ -1,0 +1,22 @@
+name: hackathon-task-tracker
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    environment:
+      DATABASE_URL: "${DATABASE_URL:-sqlite:////data/task_tracker.db}"
+      JWT_SECRET_KEY: "${JWT_SECRET_KEY:-hackathon-dev-secret-change-me}"
+      ACCESS_TOKEN_TTL_MINUTES: "${ACCESS_TOKEN_TTL_MINUTES:-720}"
+      BOOTSTRAP_TRANSLATION: "${BOOTSTRAP_TRANSLATION:-0}"
+    volumes:
+      - task_tracker_data:/data
+      - argos_data:/app/.argos
+    restart: unless-stopped
+
+volumes:
+  task_tracker_data:
+  argos_data:

@@ -1,11 +1,12 @@
 PYTHON ?= python3
 VENV ?= .venv
+DOCKER_COMPOSE ?= docker compose
 VENV_PYTHON := $(VENV)/bin/python
 VENV_PIP := $(VENV)/bin/pip
 VENV_UVICORN := $(VENV)/bin/uvicorn
 VENV_PYTEST := $(VENV)/bin/pytest
 
-.PHONY: setup setup-all check-venv bootstrap-translation dev dev-reload test seed clean-venv
+.PHONY: setup setup-all check-venv bootstrap-translation dev dev-reload test seed clean-venv docker-build docker-up docker-down docker-logs docker-seed
 
 setup:
 	$(PYTHON) -m venv $(VENV)
@@ -34,3 +35,18 @@ seed: check-venv
 
 clean-venv:
 	rm -rf $(VENV)
+
+docker-build:
+	$(DOCKER_COMPOSE) build
+
+docker-up:
+	$(DOCKER_COMPOSE) up --build -d
+
+docker-down:
+	$(DOCKER_COMPOSE) down
+
+docker-logs:
+	$(DOCKER_COMPOSE) logs -f api
+
+docker-seed:
+	$(DOCKER_COMPOSE) exec api python -m app.seed

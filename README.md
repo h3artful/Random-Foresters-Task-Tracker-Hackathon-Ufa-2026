@@ -2,6 +2,28 @@
 
 Task management service aligned with hackathon requirements.
 
+## Quick Start (Docker, recommended for team/jury)
+1. Make sure Docker Desktop is running.
+2. Create env file:
+   - `cp .env.example .env`
+3. Build and start:
+   - `docker compose up --build -d`
+4. (Optional) seed demo data:
+   - `docker compose exec api python -m app.seed`
+5. Open:
+   - `http://127.0.0.1:8000`
+
+Useful Docker commands:
+- `make docker-up` - build + start in background
+- `make docker-logs` - follow API logs
+- `make docker-seed` - seed demo users/projects/tasks
+- `make docker-down` - stop containers
+
+Translation model bootstrap in container:
+- By default, translation bootstrap is disabled (`BOOTSTRAP_TRANSLATION=0`).
+- Set `BOOTSTRAP_TRANSLATION=1` in `.env` to download/install local ru->en model on first container start.
+- This requires internet once and may take a few minutes.
+
 ## Quick Start
 1. Clone the repository.
 2. Make sure `python3` is available (tested on Python `3.14.x`).

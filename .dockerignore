@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+.pytest_cache
+.vscode
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.db
+task_tracker.db
+tests
+.argos
+README.md
+.DS_Store
