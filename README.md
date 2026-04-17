@@ -1,72 +1,86 @@
-# Task Tracker (Hackathon MVP)
+# Random Forester's Task Tracker (MVP для хакатона)
 
-Task management service aligned with hackathon requirements.
+Сервис управления задачами, разработанный за 12 часов с нуля в рамках Хакатона в Уфе (16-17 апреля 2026).
 
-## Quick Start (Docker, recommended for team/jury)
-1. Make sure Docker Desktop is running.
-2. Create env file:
+## Быстрый старт (Docker)
+1. Убедитесь, что Docker запущен.
+2. Создайте файл окружения:
    - `cp .env.example .env`
-3. Build and start:
+3. Соберите и запустите проект:
    - `docker compose up --build -d`
-4. (Optional) seed demo data:
+4. (Опционально) загрузите демо-данные:
    - `docker compose exec api python -m app.seed`
-5. Open:
+5. Откройте:
    - `http://127.0.0.1:8000`
+6. Если БД пустая и вы не загружали демо-данные, зарегистрируйте самого первого пользователя:
+   ```bash
+   curl -X POST http://127.0.0.1:8000/api/auth/register \
+     -H "Content-Type: application/json" \
+     -d '{
+       "name": "manager_name",
+       "login": "manager",
+       "password": "demo12345"
+     }'
+   ```
 
-Useful Docker commands:
-- `make docker-up` - build + start in background
-- `make docker-logs` - follow API logs
-- `make docker-seed` - seed demo users/projects/tasks
-- `make docker-down` - stop containers
+Первый зарегистрированный пользователь автоматически получает роль `manager`.
+После этого публичная регистрация отключается, и новых пользователей могут создавать только `manager` или `admin`.
 
-Translation model bootstrap in container:
-- By default, translation bootstrap is disabled (`BOOTSTRAP_TRANSLATION=0`).
-- Set `BOOTSTRAP_TRANSLATION=1` in `.env` to download/install local ru->en model on first container start.
-- This requires internet once and may take a few minutes.
+Docker-команды:
+- `make docker-up` - сборка и запуск в фоне
+- `make docker-logs` - просмотр логов API в реальном времени
+- `make docker-seed` - заполнение демо-пользователями, проектами и задачами
+- `make docker-down` - остановка контейнеров
 
-## Quick Start
-1. Clone the repository.
-2. Make sure `python3` is available (tested on Python `3.14.x`).
-3. Run one command for full setup (including local RU->EN translation resources):
+Инициализация модели перевода в контейнере:
+- По умолчанию загрузка модели перевода отключена (`BOOTSTRAP_TRANSLATION=0`).
+- Установите `BOOTSTRAP_TRANSLATION=1` в `.env`, чтобы при первом запуске контейнера скачать и установить локальную модель `ru -> en`.
+- Для этого один раз потребуется интернет, и процесс может занять несколько минут.
+- Если этого не сделать, то оценка ML ETA будет в виде прочерка (-)
+
+## Быстрый старт (без Docker)
+1. Склонируйте репозиторий.
+2. Убедитесь, что доступен `python3` (проверено на Python `3.14.x`).
+3. Выполните одну команду для полной настройки (включая локальные ресурсы перевода `RU -> EN`):
    - `make setup-all`
-4. Start the app:
+4. Запустите приложение:
    - `make dev-reload`
-5. Open:
+5. Откройте:
    - `http://127.0.0.1:8000`
 
-If you only need core app setup without translation bootstrap:
+Если нужна только базовая настройка приложения без инициализации перевода:
 - `make setup`
 
-Useful commands:
-- `make test` - run tests
-- `make seed` - seed demo data
-- `make bootstrap-translation` - install/update local translation models
-- `make clean-venv` - remove virtualenv
+Полезные команды:
+- `make test` - запуск тестов
+- `make seed` - загрузка демо-данных
+- `make bootstrap-translation` - установка или обновление локальных моделей перевода
+- `make clean-venv` - удаление виртуального окружения
 
-## Implemented MVP
-- Login with JWT
-- User creation is restricted to `manager`/`admin`
-- Roles: `manager`, `developer`
-- Projects and participants
-- Sprints inside projects
-- Tasks with attributes:
-  - title
-  - description
-  - type (`feature`, `bug`, `tech_debt`, `documentation`)
-  - priority (`Trivial`, `Minor`, `Low`, `Medium`, `Major`, `High`, `Critical`, `Blocker`)
-  - assignee
-  - sprint binding
-- Strict status flow:
-  - `open -> selected -> in_progress -> ready_for_acceptance -> closed`
-- Role-based workflow:
-  - Manager: creates/assigns tasks, closes accepted tasks
-  - Developer: takes task into work and moves it to acceptance
+## Что реализовано в MVP
+- Аутентификация через JWT
+- Создание пользователей доступно только ролям `manager`/`admin`
+- Роли: Менеджер (`manager`), Разработчик (`developer`)
+- Проекты и участники
+- Спринты внутри проектов
+- Задачи с атрибутами:
+  - название (`title`)
+  - описание (`description`)
+  - тип: Фича (`feature`), Баг (`bug`), Техдолг (`tech_debt`), Документация (`documentation`)
+  - приоритет: Тривиальный (`Trivial`), Незначительный (`Minor`), Низкий (`Low`), Средний (`Medium`), Крупный (`Major`), Высокий (`High`), Критический (`Critical`), Блокирующий (`Blocker`)
+  - исполнитель (`assignee`)
+  - привязка к спринту (`sprint binding`)
+- Строгий поток статусов:
+  - Открыта (`open`) -> Выбрана (`selected`) -> В работе (`in_progress`) -> На проверке (`ready_for_acceptance`) -> Закрыта (`closed`)
+- Ролевой сценарий работы:
+  - Менеджер: создает и назначает задачи, закрывает принятые задачи
+  - Разработчик: берет задачу в работу и переводит ее на проверку
 - REST API + Swagger/OpenAPI
 
-## Local RU->EN Translation for ML ETA
-- ETA model expects English task text.
-- If task title/description contains Cyrillic, backend translates it locally (`ru -> en`) before prediction.
-- No external translation APIs are used in runtime.
-- Translation data is stored locally in project directory `.argos/`.
-- Optional env var: `ARGOS_RU_EN_PACKAGE_PATH=/absolute/path/to/ru_en.argosmodel`
-  - If set, app will try to install translation package from this local file.
+## Локальный перевод `RU -> EN` для ML ETA
+- Модель ETA ожидает текст задачи на английском языке.
+- Если `title` или `description` задачи содержат кириллицу, backend локально переводит текст (`ru -> en`) перед предсказанием.
+- Во время работы приложения внешние API перевода не используются.
+- Данные перевода хранятся локально в директории проекта `.argos/`.
+- Необязательная переменная окружения: `ARGOS_RU_EN_PACKAGE_PATH=/absolute/path/to/ru_en.argosmodel`
+  - Если она задана, приложение попытается установить пакет перевода из этого локального файла.
